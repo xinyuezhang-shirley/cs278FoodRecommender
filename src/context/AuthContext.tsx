@@ -1,6 +1,14 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import type { AuthUser, UserProfile } from '../types';
-import { getCurrentSession, signIn, signOut, signUp } from '../services/authService';
+import {
+  getAuthSnapshotFromSession,
+  getCurrentSession,
+  signIn,
+  signOut,
+  signUp,
+} from '../services/authService';
+import { supabase } from '../lib/supabase';
 import type { SignInData, SignUpData } from '../types';
 
 interface AuthContextValue {
@@ -20,12 +28,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadSession = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateFromSession(session: Session | null) {
+      try {
+        setLoading(true);
+        const snap = await getAuthSnapshotFromSession(session);
+        if (cancelled) return;
+        if (snap) {
+          setUser(snap.user);
+          setProfile(snap.profile);
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setUser(null);
+          setProfile(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      void hydrateFromSession(session);
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleSignIn = useCallback(async (data: SignInData) => {
+    await signIn(data);
+  }, []);
+
+  const handleSignUp = useCallback(async (data: SignUpData) => {
+    await signUp(data);
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    await signOut();
+  }, []);
+
+  const refreshProfile = useCallback(async () => {
     try {
-      const session = await getCurrentSession();
-      if (session) {
-        setUser(session.user);
-        setProfile(session.profile);
+      const snap = await getCurrentSession();
+      if (snap) {
+        setUser(snap.user);
+        setProfile(snap.profile);
       } else {
         setUser(null);
         setProfile(null);
@@ -33,29 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setUser(null);
       setProfile(null);
-    } finally {
-      setLoading(false);
     }
-  }, []);
-
-  useEffect(() => { loadSession(); }, [loadSession]);
-
-  const handleSignIn = useCallback(async (data: SignInData) => {
-    const result = await signIn(data);
-    setUser(result.user);
-    setProfile(result.profile);
-  }, []);
-
-  const handleSignUp = useCallback(async (data: SignUpData) => {
-    const result = await signUp(data);
-    setUser(result.user);
-    setProfile(result.profile);
-  }, []);
-
-  const handleSignOut = useCallback(async () => {
-    await signOut();
-    setUser(null);
-    setProfile(null);
   }, []);
 
   return (
@@ -66,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signIn: handleSignIn,
       signUp: handleSignUp,
       signOut: handleSignOut,
-      refreshProfile: loadSession,
+      refreshProfile,
     }}>
       {children}
     </AuthContext.Provider>

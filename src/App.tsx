@@ -6,9 +6,6 @@ import { FeedPage } from './pages/FeedPage';
 import { MapPage } from './pages/MapPage';
 import { CommunityPage } from './pages/CommunityPage';
 import { ProfilePage } from './pages/ProfilePage';
-import { initStorage } from './services/storageService';
-
-initStorage();
 
 export default function App() {
   return (

@@ -1,71 +1,153 @@
-import type { Post, PostFilter, CreatePostData, ReactionType } from '../types';
-import {
-  getPosts, savePosts, getReactions, saveReactions,
-  getComments, getProfileById,
-} from './storageService';
-import { generateId } from '../utils/helpers';
+import type {
+  Post, PostFilter, CreatePostData, ReactionType, PostType,
+} from '../types';
+import { supabase } from '../lib/supabase';
+import { profileLiteFromRow } from './profileHelpers';
 import { sanitizeText, sanitizeTags } from '../utils/sanitize';
 
-function enrichPost(post: Post, currentUserId?: string): Post {
-  const reactions = getReactions().filter(r => r.post_id === post.id);
-  const comments = getComments().filter(c => c.post_id === post.id);
-  const author = getProfileById(post.author_id);
+function escapeIlike(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
 
-  const userReaction = currentUserId
-    ? (reactions.find(r => r.user_id === currentUserId)?.type ?? null)
-    : null;
+function mapRowToPost(
+  row: Record<string, unknown>,
+  overrides: Partial<Pick<Post,
+    | 'author'
+    | 'like_count'
+    | 'still_there_count'
+    | 'comment_count'
+    | 'user_reaction'
+  >> & { mock_rating?: number; mock_is_open?: boolean },
+): Post {
+  const cuisine_tags = Array.isArray(row.cuisine_tags) ? row.cuisine_tags as string[] : [];
+  const dietary_tags = Array.isArray(row.dietary_tags) ? row.dietary_tags as string[] : [];
+  const desc = typeof row.description === 'string' ? row.description : '';
 
-  return {
-    ...post,
-    author,
-    like_count: reactions.filter(r => r.type === 'like').length,
-    still_there_count: reactions.filter(r => r.type === 'still_there').length,
-    comment_count: comments.length,
-    user_reaction: userReaction,
+  const base: Post = {
+    id: row.id as string,
+    author_id: row.author_id as string,
+    type: row.type as PostType,
+    title: row.title as string,
+    description: desc ?? '',
+    image_url: typeof row.image_url === 'string' ? row.image_url : undefined,
+    location_name: row.location_name as string,
+    latitude: typeof row.latitude === 'number' ? row.latitude : undefined,
+    longitude: typeof row.longitude === 'number' ? row.longitude : undefined,
+    cuisine_tags,
+    dietary_tags,
+    is_free_food: Boolean(row.is_free_food),
+    expires_at: typeof row.expires_at === 'string' ? row.expires_at : undefined,
+    circle_id: typeof row.circle_id === 'string' ? row.circle_id : undefined,
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string,
   };
+
+  const merged = { ...base, ...overrides };
+
+  const mock_rating = typeof row.mock_rating === 'number' ? row.mock_rating : undefined;
+  const mock_is_open = typeof row.mock_is_open === 'boolean' ? row.mock_is_open : undefined;
+  const out = { ...merged };
+  if (mock_rating !== undefined) out.mock_rating = mock_rating;
+  if (mock_is_open !== undefined) out.mock_is_open = mock_is_open;
+  return out;
+}
+
+async function enrichPosts(rows: Record<string, unknown>[], currentUserId?: string): Promise<Post[]> {
+  if (rows.length === 0) return [];
+
+  const postIds = rows.map(r => r.id as string);
+  const authorIds = [...new Set(rows.map(r => r.author_id as string))];
+
+  const [reactionsResult, commentsResult, profilesResult] = await Promise.all([
+    supabase.from('reactions').select('id, post_id, user_id, type').in('post_id', postIds),
+    supabase.from('comments').select('post_id').in('post_id', postIds),
+    supabase
+      .from('profiles')
+      .select('id, username, avatar_url, bio, food_personality, created_at')
+      .in('id', authorIds),
+  ]);
+
+  if (reactionsResult.error) throw new Error(reactionsResult.error.message);
+  if (commentsResult.error) throw new Error(commentsResult.error.message);
+  if (profilesResult.error) throw new Error(profilesResult.error.message);
+
+  const reactionRows = reactionsResult.data ?? [];
+  const commentRows = commentsResult.data ?? [];
+  const profileRows = profilesResult.data ?? [];
+
+  const profileMap = new Map(profileRows.map(p => [p.id, profileLiteFromRow(p)]));
+  const commentCountByPost = new Map<string, number>();
+  for (const c of commentRows) {
+    const pid = c.post_id as string;
+    commentCountByPost.set(pid, (commentCountByPost.get(pid) ?? 0) + 1);
+  }
+
+  return rows.map((row) => {
+    const id = row.id as string;
+    const reactions = reactionRows.filter(r => r.post_id === id);
+    const userReaction = currentUserId
+      ? (reactions.find(r => r.user_id === currentUserId)?.type as ReactionType | undefined) ?? null
+      : null;
+
+    return mapRowToPost(row, {
+      author: profileMap.get(row.author_id as string),
+      like_count: reactions.filter(r => r.type === 'like').length,
+      still_there_count: reactions.filter(r => r.type === 'still_there').length,
+      comment_count: commentCountByPost.get(id) ?? 0,
+      user_reaction: userReaction,
+    });
+  });
 }
 
 export async function getPaginatedPosts(
   filter: PostFilter = {},
   currentUserId?: string
 ): Promise<Post[]> {
-  let posts = getPosts();
+  let q = supabase.from('posts').select('*');
 
   if (filter.type && filter.type !== 'all') {
-    posts = posts.filter(p => p.type === filter.type);
+    q = q.eq('type', filter.type);
   }
   if (filter.dietary) {
-    posts = posts.filter(p => p.dietary_tags.includes(filter.dietary!));
+    q = q.contains('dietary_tags', [filter.dietary]);
   }
   if (filter.cuisine) {
-    posts = posts.filter(p => p.cuisine_tags.includes(filter.cuisine!));
-  }
-  if (filter.searchQuery) {
-    const q = filter.searchQuery.toLowerCase();
-    posts = posts.filter(p =>
-      p.title.toLowerCase().includes(q) ||
-      p.location_name.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q)
-    );
+    q = q.contains('cuisine_tags', [filter.cuisine]);
   }
   if (filter.circleId) {
-    posts = posts.filter(p => p.circle_id === filter.circleId);
+    q = q.eq('circle_id', filter.circleId);
+  }
+  if (filter.searchQuery?.trim()) {
+    const term = escapeIlike(filter.searchQuery.trim());
+    q = q.or(`title.ilike.%${term}%,description.ilike.%${term}%,location_name.ilike.%${term}%`);
   }
 
-  posts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  return posts.map(p => enrichPost(p, currentUserId));
+  q = q.order('created_at', { ascending: false });
+
+  const { data: rows, error } = await q;
+  if (error) throw new Error(error.message);
+
+  return enrichPosts((rows ?? []) as Record<string, unknown>[], currentUserId);
 }
 
 export async function getPostById(id: string, currentUserId?: string): Promise<Post | null> {
-  const post = getPosts().find(p => p.id === id);
-  if (!post) return null;
-  return enrichPost(post, currentUserId);
+  const { data: row, error } = await supabase.from('posts').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row) return null;
+
+  const [enriched] = await enrichPosts([row as Record<string, unknown>], currentUserId);
+  return enriched ?? null;
 }
 
 export async function getPostsByAuthor(authorId: string, currentUserId?: string): Promise<Post[]> {
-  const posts = getPosts().filter(p => p.author_id === authorId);
-  posts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  return posts.map(p => enrichPost(p, currentUserId));
+  const { data: rows, error } = await supabase
+    .from('posts')
+    .select('*')
+    .eq('author_id', authorId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return enrichPosts((rows ?? []) as Record<string, unknown>[], currentUserId);
 }
 
 export async function createPost(
@@ -77,30 +159,28 @@ export async function createPost(
   if (data.is_free_food && !data.expires_at) throw new Error('Expiration time is required for free food posts');
   if (data.description && data.description.length > 500) throw new Error('Description must be 500 characters or less');
 
-  const now = new Date().toISOString();
-  const post: Post = {
-    id: generateId(),
+  const insert = {
     author_id: authorId,
     type: data.type,
     title: sanitizeText(data.title, 100),
-    description: sanitizeText(data.description, 500),
-    image_url: data.image_url?.trim() || undefined,
+    description: sanitizeText(data.description, 500) || null,
+    image_url: data.image_url?.trim() || null,
     location_name: sanitizeText(data.location_name, 100),
-    latitude: data.latitude,
-    longitude: data.longitude,
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
     cuisine_tags: sanitizeTags(data.cuisine_tags),
     dietary_tags: sanitizeTags(data.dietary_tags),
     is_free_food: data.is_free_food,
-    expires_at: data.expires_at,
-    circle_id: data.circle_id,
-    created_at: now,
-    updated_at: now,
+    expires_at: data.expires_at ?? null,
+    circle_id: data.circle_id ?? null,
   };
 
-  const posts = getPosts();
-  posts.unshift(post);
-  savePosts(posts);
-  return enrichPost(post, authorId);
+  const { data: row, error } = await supabase.from('posts').insert(insert).select('*').single();
+  if (error) throw new Error(error.message);
+
+  const [enriched] = await enrichPosts([row as Record<string, unknown>], authorId);
+  if (!enriched) throw new Error('Could not load new post');
+  return enriched;
 }
 
 export async function updatePost(
@@ -108,32 +188,48 @@ export async function updatePost(
   data: Partial<CreatePostData>,
   currentUserId: string
 ): Promise<Post> {
-  const posts = getPosts();
-  const idx = posts.findIndex(p => p.id === id);
-  if (idx === -1) throw new Error('Post not found');
-  if (posts[idx].author_id !== currentUserId) throw new Error('Not authorized to edit this post');
+  const patch: Record<string, unknown> = {};
 
-  const updated = {
-    ...posts[idx],
-    ...data,
-    title: data.title ? sanitizeText(data.title, 100) : posts[idx].title,
-    description: data.description ? sanitizeText(data.description, 500) : posts[idx].description,
-    location_name: data.location_name ? sanitizeText(data.location_name, 100) : posts[idx].location_name,
-    cuisine_tags: data.cuisine_tags ? sanitizeTags(data.cuisine_tags) : posts[idx].cuisine_tags,
-    dietary_tags: data.dietary_tags ? sanitizeTags(data.dietary_tags) : posts[idx].dietary_tags,
-    updated_at: new Date().toISOString(),
-  };
-  posts[idx] = updated;
-  savePosts(posts);
-  return enrichPost(updated, currentUserId);
+  if (data.type !== undefined) patch.type = data.type;
+  if (data.title !== undefined) patch.title = sanitizeText(data.title, 100);
+  if (data.description !== undefined) patch.description = sanitizeText(data.description, 500) || null;
+  if (data.image_url !== undefined) patch.image_url = data.image_url?.trim() || null;
+  if (data.location_name !== undefined) patch.location_name = sanitizeText(data.location_name, 100);
+  if (data.latitude !== undefined) patch.latitude = data.latitude ?? null;
+  if (data.longitude !== undefined) patch.longitude = data.longitude ?? null;
+  if (data.cuisine_tags !== undefined) patch.cuisine_tags = sanitizeTags(data.cuisine_tags);
+  if (data.dietary_tags !== undefined) patch.dietary_tags = sanitizeTags(data.dietary_tags);
+  if (data.is_free_food !== undefined) patch.is_free_food = data.is_free_food;
+  if (data.expires_at !== undefined) patch.expires_at = data.expires_at ?? null;
+  if (data.circle_id !== undefined) patch.circle_id = data.circle_id ?? null;
+
+  const { data: row, error } = await supabase
+    .from('posts')
+    .update(patch)
+    .eq('id', id)
+    .eq('author_id', currentUserId)
+    .select('*')
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!row) throw new Error('Post not found or not authorized to edit this post');
+
+  const [enriched] = await enrichPosts([row as Record<string, unknown>], currentUserId);
+  if (!enriched) throw new Error('Could not load updated post');
+  return enriched;
 }
 
 export async function deletePost(id: string, currentUserId: string): Promise<void> {
-  const posts = getPosts();
-  const post = posts.find(p => p.id === id);
-  if (!post) throw new Error('Post not found');
-  if (post.author_id !== currentUserId) throw new Error('Not authorized to delete this post');
-  savePosts(posts.filter(p => p.id !== id));
+  const { data, error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', id)
+    .eq('author_id', currentUserId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error('Post not found or not authorized to delete this post');
 }
 
 export async function reactToPost(
@@ -141,29 +237,48 @@ export async function reactToPost(
   userId: string,
   type: ReactionType
 ): Promise<{ like_count: number; still_there_count: number; user_reaction: ReactionType | null }> {
-  const reactions = getReactions();
-  const existing = reactions.find(r => r.post_id === postId && r.user_id === userId);
+  const { data: existing, error: fetchErr } = await supabase
+    .from('reactions')
+    .select('id, type')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (fetchErr) throw new Error(fetchErr.message);
 
   if (existing) {
     if (existing.type === type) {
-      // Toggle off
-      saveReactions(reactions.filter(r => r.id !== existing.id));
+      const { error: delErr } = await supabase.from('reactions').delete().eq('id', existing.id);
+      if (delErr) throw new Error(delErr.message);
     } else {
-      // Switch reaction type
-      existing.type = type;
-      saveReactions(reactions);
+      const { error: updErr } = await supabase
+        .from('reactions')
+        .update({ type })
+        .eq('id', existing.id);
+      if (updErr) throw new Error(updErr.message);
     }
   } else {
-    reactions.push({ id: generateId(), post_id: postId, user_id: userId, type });
-    saveReactions(reactions);
+    const { error: insErr } = await supabase
+      .from('reactions')
+      .insert({ post_id: postId, user_id: userId, type });
+    if (insErr) throw new Error(insErr.message);
   }
 
-  const updated = getReactions().filter(r => r.post_id === postId);
-  const userReaction = updated.find(r => r.user_id === userId)?.type ?? null;
+  const { data: all, error } = await supabase
+    .from('reactions')
+    .select('user_id, type')
+    .eq('post_id', postId);
+
+  if (error) throw new Error(error.message);
+  const list = all ?? [];
+
+  const userReaction = userId
+    ? (list.find(r => r.user_id === userId)?.type as ReactionType | undefined) ?? null
+    : null;
 
   return {
-    like_count: updated.filter(r => r.type === 'like').length,
-    still_there_count: updated.filter(r => r.type === 'still_there').length,
+    like_count: list.filter(r => r.type === 'like').length,
+    still_there_count: list.filter(r => r.type === 'still_there').length,
     user_reaction: userReaction,
   };
 }

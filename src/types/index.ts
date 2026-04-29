@@ -109,13 +109,6 @@ export interface CreatePostData {
   circle_id?: string;
 }
 
-export interface StoredUser {
-  id: string;
-  email: string;
-  password: string;
-  profile: UserProfile;
-}
-
 export interface AppError {
   message: string;
   code?: string;

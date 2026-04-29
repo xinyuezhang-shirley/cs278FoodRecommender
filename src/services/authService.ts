@@ -1,13 +1,69 @@
+import type { Session, User } from '@supabase/supabase-js';
 import type { UserProfile, AuthUser, SignUpData, SignInData } from '../types';
-import {
-  getUsers, saveUsers, saveSession, clearSession, getSession, getProfileById,
-} from './storageService';
+import { supabase } from '../lib/supabase';
 import { validateEmail, validatePassword, validateUsername } from '../utils/sanitize';
-import { generateId } from '../utils/helpers';
 
 export interface AuthResult {
   user: AuthUser;
   profile: UserProfile;
+}
+
+interface ProfileRow {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  food_personality: string | null;
+  created_at: string;
+}
+
+function profileRowToUserProfile(row: ProfileRow, email: string): UserProfile {
+  return {
+    id: row.id,
+    username: row.username,
+    email,
+    avatar_url: row.avatar_url ?? undefined,
+    bio: row.bio ?? undefined,
+    food_personality: row.food_personality ?? undefined,
+    created_at: row.created_at,
+  };
+}
+
+async function fetchRequiredProfile(userId: string, emailFallback: string): Promise<UserProfile> {
+  const { data: row, error } = await supabase
+    .from('profiles')
+    .select('id, username, avatar_url, bio, food_personality, created_at')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!row) throw new Error('Profile not found');
+
+  return profileRowToUserProfile(row as ProfileRow, emailFallback);
+}
+
+/** Hydrate app user + profile from a Supabase session (used by AuthContext subscriber). */
+export async function getAuthSnapshotFromSession(session: Session | null): Promise<AuthResult | null> {
+  const u = session?.user;
+  if (!u) return null;
+
+  const email = u.email ?? '';
+  const { data: row, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, username, avatar_url, bio, food_personality, created_at')
+    .eq('id', u.id)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error(profileError);
+    return null;
+  }
+  if (!row) return null;
+
+  return {
+    user: { id: u.id, email },
+    profile: profileRowToUserProfile(row as ProfileRow, email),
+  };
 }
 
 export async function signUp(data: SignUpData): Promise<AuthResult> {
@@ -19,33 +75,30 @@ export async function signUp(data: SignUpData): Promise<AuthResult> {
   const unErr = validateUsername(username);
   if (unErr) throw new Error(unErr);
 
-  const users = getUsers();
-  if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-    throw new Error('An account with this email already exists');
-  }
-  if (users.find(u => u.profile.username.toLowerCase() === username.toLowerCase())) {
-    throw new Error('Username is already taken');
-  }
-
-  const id = generateId();
-  const now = new Date().toISOString();
-  const profile: UserProfile = {
-    id,
-    username,
+  const { data: authData, error } = await supabase.auth.signUp({
     email,
-    avatar_url: `https://api.dicebear.com/7.x/notionists/svg?seed=${username}`,
-    bio: '',
-    food_personality: 'Food Explorer 🍴',
-    created_at: now,
-  };
+    password,
+    options: {
+      data: { username },
+    },
+  });
 
-  users.push({ id, email, password, profile });
-  saveUsers(users);
+  if (error) throw new Error(error.message);
+  const userObj = authData.user as User | null;
+  if (!userObj) throw new Error('Sign up failed');
 
-  const token = generateId();
-  saveSession(id, token);
+  const resolvedEmail = userObj.email ?? email;
 
-  return { user: { id, email }, profile };
+  try {
+    const profile = await fetchRequiredProfile(userObj.id, resolvedEmail);
+    return {
+      user: { id: userObj.id, email: resolvedEmail },
+      profile,
+    };
+  } catch {
+    await supabase.auth.signOut();
+    throw new Error('Could not load your profile after sign up. Please try again.');
+  }
 }
 
 export async function signIn(data: SignInData): Promise<AuthResult> {
@@ -53,62 +106,61 @@ export async function signIn(data: SignInData): Promise<AuthResult> {
 
   if (!email || !password) throw new Error('Email and password are required');
 
-  const users = getUsers();
-  const stored = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (!stored || stored.password !== password) {
-    throw new Error('Invalid email or password');
-  }
+  if (error) throw new Error(error.message === 'Invalid login credentials'
+    ? 'Invalid email or password'
+    : error.message);
 
-  const token = generateId();
-  saveSession(stored.id, token);
+  const userObj = authData.user as User | null;
+  if (!userObj) throw new Error('Sign in failed');
 
-  return { user: { id: stored.id, email: stored.email }, profile: stored.profile };
+  const resolvedEmail = userObj.email ?? email;
+  const profile = await fetchRequiredProfile(userObj.id, resolvedEmail);
+
+  return {
+    user: { id: userObj.id, email: resolvedEmail },
+    profile,
+  };
 }
 
 export async function signOut(): Promise<void> {
-  clearSession();
+  const { error } = await supabase.auth.signOut();
+  if (error) throw new Error(error.message);
 }
 
 export async function getCurrentSession(): Promise<AuthResult | null> {
-  const session = getSession();
-  if (!session) return null;
-
-  const profile = getProfileById(session.userId);
-  if (!profile) {
-    clearSession();
-    return null;
-  }
-
-  const users = getUsers();
-  const stored = users.find(u => u.id === session.userId);
-  if (!stored) {
-    clearSession();
-    return null;
-  }
-
-  return {
-    user: { id: stored.id, email: stored.email },
-    profile,
-  };
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) throw new Error(error.message);
+  return getAuthSnapshotFromSession(session);
 }
 
 export async function updateUserProfile(
   userId: string,
   update: Partial<Pick<UserProfile, 'username' | 'bio' | 'food_personality' | 'avatar_url'>>
 ): Promise<UserProfile> {
-  const users = getUsers();
-  const idx = users.findIndex(u => u.id === userId);
-  if (idx === -1) throw new Error('User not found');
-
   if (update.username) {
     const unErr = validateUsername(update.username);
     if (unErr) throw new Error(unErr);
-    const taken = users.some(u => u.id !== userId && u.profile.username === update.username);
-    if (taken) throw new Error('Username is already taken');
   }
 
-  users[idx].profile = { ...users[idx].profile, ...update };
-  saveUsers(users);
-  return users[idx].profile;
+  const payload: Record<string, unknown> = {};
+  if (update.username !== undefined) payload.username = update.username;
+  if (update.bio !== undefined) payload.bio = update.bio;
+  if (update.food_personality !== undefined) payload.food_personality = update.food_personality;
+  if (update.avatar_url !== undefined) payload.avatar_url = update.avatar_url;
+
+  const { data: row, error } = await supabase
+    .from('profiles')
+    .update(payload)
+    .eq('id', userId)
+    .select('id, username, avatar_url, bio, food_personality, created_at')
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  const email = user?.email ?? '';
+
+  return profileRowToUserProfile(row as ProfileRow, email);
 }
