@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@theme {
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+
+  --color-matcha: #16a34a;
+  --color-matcha-light: #bbf7d0;
+  --color-matcha-bg: #f0fdf4;
+  --color-matcha-text: #14532d;
+
+  --color-taro: #9333ea;
+  --color-taro-light: #e9d5ff;
+  --color-taro-bg: #faf5ff;
+  --color-taro-text: #581c87;
+
+  --color-milk-tea: #92400e;
+  --color-milk-tea-light: #fde68a;
+  --color-milk-tea-bg: #fffbeb;
+
+  --color-strawberry: #f43f5e;
+  --color-strawberry-light: #fecdd3;
+  --color-strawberry-bg: #fff1f2;
+
+  --color-nommi-bg: #fafaf9;
+  --color-nommi-card: #ffffff;
+  --color-nommi-text: #1a1a1a;
+  --color-nommi-muted: #6b7280;
+  --color-nommi-border: #e5e7eb;
+  --color-nommi-subtle: #f3f4f6;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { font-family: 'Inter', system-ui, sans-serif; }
+
+body {
+  background-color: #fafaf9;
+  color: #1a1a1a;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.masonry-grid { columns: 2; column-gap: 8px; padding: 0 8px; }
+.masonry-item { break-inside: avoid; margin-bottom: 8px; display: inline-block; width: 100%; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.line-clamp-2 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.line-clamp-3 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px); }
+.press-active:active { transform: scale(0.97); }
