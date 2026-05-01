@@ -31,60 +31,43 @@ export function FilterDropdownChip({ label, options, value, onChange }: FilterDr
   return (
     <div ref={ref} className="relative flex-shrink-0">
       <button
+        type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-        style={
+        className={[
+          'flex items-center gap-1 px-3 py-2 rounded-full text-sm font-bold transition-all border',
           active
-            ? {
-                background: '#16a34a',
-                color: 'white',
-                boxShadow: '0 1px 6px rgba(22,163,74,0.3)',
-              }
-            : {
-                background: 'rgba(255,255,255,0.92)',
-                color: '#374151',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                border: '1px solid rgba(0,0,0,0.07)',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-              }
-        }
+            ? 'bg-[#2f5fc4] text-white border-[#2f5fc4]'
+            : 'bg-[#f5f7ff] text-[#6b7280] border-[#e5e7eb] hover:border-[#2f5fc4]/35',
+        ].join(' ')}
       >
         {active ? selectedLabel : label}
         <ChevronDown
-          className="w-3 h-3 transition-transform"
+          className="w-3 h-3 transition-transform shrink-0"
           style={{ transform: open ? 'rotate(180deg)' : 'none' }}
+          aria-hidden
         />
       </button>
 
       {open && (
-        <div
-          className="absolute top-full mt-1.5 left-0 min-w-[140px] rounded-2xl overflow-hidden z-[500]"
-          style={{
-            background: 'rgba(255,255,255,0.97)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06)',
-            border: '1px solid rgba(0,0,0,0.06)',
-          }}
-        >
-          {/* Clear option */}
+        <div className="absolute top-full mt-1.5 left-0 min-w-[140px] rounded-2xl overflow-hidden z-[500] bg-white border border-[#e5e7eb] shadow-[0_12px_32px_rgba(47,95,196,0.14)] backdrop-blur-sm">
           <button
+            type="button"
             onClick={() => { onChange(''); setOpen(false); }}
-            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-[#6b7280] hover:bg-[#f9fafb] transition-colors"
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-[#6b7280] hover:bg-[#faf9f5] transition-colors"
           >
             <span>Any {label.toLowerCase()}</span>
-            {value === '' && <Check className="w-3.5 h-3.5 text-[#16a34a]" />}
+            {value === '' && <Check className="w-3.5 h-3.5 text-[#2f5fc4]" aria-hidden />}
           </button>
-          <div className="h-px bg-[#f3f4f6]" />
+          <div className="h-px bg-[#e5e7eb]" />
           {options.map(opt => (
             <button
+              type="button"
               key={opt.value}
               onClick={() => { onChange(opt.value); setOpen(false); }}
-              className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-[#1a1a1a] hover:bg-[#f9fafb] transition-colors"
+              className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-[#1a1a1a] hover:bg-[#faf9f5] transition-colors"
             >
               <span>{opt.label}</span>
-              {value === opt.value && <Check className="w-3.5 h-3.5 text-[#16a34a]" />}
+              {value === opt.value && <Check className="w-3.5 h-3.5 text-[#2f5fc4]" aria-hidden />}
             </button>
           ))}
         </div>

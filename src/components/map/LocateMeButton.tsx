@@ -12,23 +12,27 @@ export function LocateMeButton({ geoState, userLocation, onLocate }: Props) {
 
   return (
     <button
+      type="button"
       onClick={onLocate}
       disabled={loading}
-      className="absolute bottom-20 right-3 z-[1000] w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-95"
-      style={{
-        background: userLocation ? '#6366f1' : 'rgba(255,255,255,0.95)',
-        color: userLocation ? 'white' : '#6b7280',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
-        border: userLocation ? 'none' : '1px solid rgba(0,0,0,0.06)',
-      }}
+      className={[
+        'absolute bottom-4 right-3 z-[1000] w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-95 border shadow-[0_8px_20px_rgba(47,95,196,0.22)]',
+        userLocation
+          ? 'bg-[#2f5fc4] text-white border-[#2f5fc4]'
+          : 'bg-white/95 text-[#6b7280] border-[#e5e7eb] backdrop-blur-sm',
+      ].join(' ')}
       aria-label="Locate me"
+      style={{ WebkitBackdropFilter: 'blur(12px)', backdropFilter: 'blur(12px)' }}
     >
       {loading ? (
-        <span className="w-4 h-4 rounded-full border-2 border-[#6366f1] border-t-transparent animate-spin inline-block" />
+        <span
+          className={[
+            'w-4 h-4 rounded-full border-2 border-t-transparent animate-spin inline-block',
+            userLocation ? 'border-white' : 'border-[#2f5fc4]',
+          ].join(' ')}
+        />
       ) : (
-        <Navigation className="w-4 h-4" />
+        <Navigation className="w-4 h-4" aria-hidden />
       )}
     </button>
   );

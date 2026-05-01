@@ -11,6 +11,16 @@ export interface UserProfile {
   created_at: string;
 }
 
+export interface CircleShareMeta {
+  circle_id: string;
+  circle_name: string;
+  share_id: string;
+  shared_at: string;
+  shared_by_id: string;
+  shared_by?: UserProfile;
+  note?: string | null;
+}
+
 export interface Post {
   id: string;
   author_id: string;
@@ -27,6 +37,8 @@ export interface Post {
   is_free_food: boolean;
   expires_at?: string;
   circle_id?: string;
+  /** Present when post is shown in a circle feed (curated share, not authorship). */
+  circle_share?: CircleShareMeta;
   created_at: string;
   updated_at: string;
   like_count?: number;
@@ -62,6 +74,23 @@ export interface FoodCircle {
   created_at: string;
   member_count?: number;
   is_member?: boolean;
+  tags?: string[];
+}
+
+export interface CircleActivityItem {
+  share_id: string;
+  shared_at: string;
+  circle: { id: string; name: string };
+  sharer: UserProfile;
+  post: Post;
+  note?: string | null;
+}
+
+export interface CreateCircleInput {
+  name: string;
+  description: string;
+  icon_type?: string;
+  tags?: string[];
 }
 
 export interface CircleMembership {

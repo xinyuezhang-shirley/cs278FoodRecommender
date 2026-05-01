@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Heart, CheckCircle, MapPin, Clock, Trash2, Edit3,
-  Send, ChevronLeft, AlertTriangle,
+  Send, ChevronLeft, AlertTriangle, Share2,
 } from 'lucide-react';
 import type { Post, Comment } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -11,15 +11,24 @@ import { timeAgo, timeRemaining, isExpired, formatDate } from '../../utils/helpe
 import { Avatar } from '../ui/Avatar';
 import { Tag, PostTypeBadge } from '../ui/Tag';
 import { PageLoader } from '../ui/LoadingSpinner';
+import { ShareToCircleModal } from '../community/ShareToCircleModal';
 
 interface PostDetailProps {
   post: Post;
   onClose: () => void;
   onPostDeleted?: () => void;
   onEditClick?: () => void;
+  /** Notify parent after share-to-circle succeeds (circle detail / community refreshes). */
+  onActivityMayChange?: () => void;
 }
 
-export function PostDetail({ post: initialPost, onClose, onPostDeleted, onEditClick }: PostDetailProps) {
+export function PostDetail({
+  post: initialPost,
+  onClose,
+  onPostDeleted,
+  onEditClick,
+  onActivityMayChange,
+}: PostDetailProps) {
   const { user } = useAuth();
   const [post, setPost] = useState<Post>(initialPost);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -28,8 +37,8 @@ export function PostDetail({ post: initialPost, onClose, onPostDeleted, onEditCl
   const [submitting, setSubmitting] = useState(false);
   const [reacting, setReacting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const isOwner = user?.id === post.author_id;
   const expired = isExpired(post.expires_at);
   const remaining = post.expires_at && !expired ? timeRemaining(post.expires_at) : null;
@@ -44,6 +53,8 @@ export function PostDetail({ post: initialPost, onClose, onPostDeleted, onEditCl
   }, [post.id]);
 
   useEffect(() => { loadComments(); }, [loadComments]);
+
+  useEffect(() => setPost(initialPost), [initialPost]);
 
   async function handleReact(type: 'like' | 'still_there') {
     if (!user) return;
@@ -116,6 +127,17 @@ export function PostDetail({ post: initialPost, onClose, onPostDeleted, onEditCl
             <PostTypeBadge type={post.type} />
           </div>
         </div>
+        {user && (
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className="p-1.5 rounded-full hover:bg-[#f5f7ff] text-[#6b7280] hover:text-[#2f5fc4] border border-transparent hover:border-[#e5e7eb]"
+            aria-label="Share to circle"
+            title="Share to circle"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+        )}
         {isOwner && (
           <div className="flex items-center gap-1">
             {onEditClick && (
@@ -152,6 +174,21 @@ export function PostDetail({ post: initialPost, onClose, onPostDeleted, onEditCl
         )}
 
         <div className="px-4 py-4">
+          {post.circle_share && (
+            <div className="mb-3 px-3 py-2 rounded-2xl border border-[#e5e7eb] bg-[#f5f7ff] text-xs text-[#6b7280] leading-relaxed">
+              <span className="font-black text-[#2f5fc4]">{post.circle_share.circle_name}</span>
+              {' · '}
+              <span className="font-semibold text-[#1a1a1a]">Original by @{post.author?.username ?? '…'}</span>
+              {' · '}
+              <span>
+                Shared by{' '}
+                <span className="font-semibold text-[#2f5fc4]">@{post.circle_share.shared_by?.username ?? '…'}</span>
+              </span>
+              {post.circle_share.note && (
+                <p className="mt-2 text-[#374151] font-medium italic">&quot;{post.circle_share.note}&quot;</p>
+              )}
+            </div>
+          )}
           {/* Title */}
           <h1 className="text-xl font-semibold text-[#1a1a1a] mb-3">{post.title}</h1>
 
@@ -252,7 +289,7 @@ export function PostDetail({ post: initialPost, onClose, onPostDeleted, onEditCl
             </h3>
 
             {commentsLoading ? (
-              <PageLoader />
+              <PageLoader compact />
             ) : comments.length === 0 ? (
               <p className="text-sm text-[#6b7280] py-4">No comments yet. Be the first!</p>
             ) : (
@@ -317,6 +354,19 @@ export function PostDetail({ post: initialPost, onClose, onPostDeleted, onEditCl
           </div>
         </div>
       </div>
+
+      {user && (
+        <ShareToCircleModal
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          post={post}
+          userId={user.id}
+          onShared={() => {
+            setShareOpen(false);
+            onActivityMayChange?.();
+          }}
+        />
+      )}
     </div>
   );
 }

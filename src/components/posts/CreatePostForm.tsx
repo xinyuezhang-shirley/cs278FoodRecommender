@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import type { CreatePostData, PostType } from '../../types';
 import { createPost } from '../../services/postService';
+import { sharePostToCircle } from '../../services/circleService';
 import { useAuth } from '../../context/AuthContext';
 import { CUISINE_OPTIONS, DIETARY_OPTIONS } from '../../utils/helpers';
 import { ImageUploader } from './ImageUploader';
@@ -273,7 +274,17 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
     setError(null);
     setSubmitting(true);
     try {
-      const post = await createPost(form, user.id);
+      const circleTarget = defaultCircleId;
+      const { circle_id: _legacy, ...rest } = form;
+      const payload: CreatePostData = { ...rest, circle_id: undefined };
+      const post = await createPost(payload, user.id);
+      if (circleTarget) {
+        try {
+          await sharePostToCircle(post.id, circleTarget, user.id);
+        } catch {
+          /* circle_posts may not exist yet or duplicate — post still visible globally */
+        }
+      }
       onSuccess(post.id);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create post');

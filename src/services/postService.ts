@@ -52,7 +52,7 @@ function mapRowToPost(
   return out;
 }
 
-async function enrichPosts(rows: Record<string, unknown>[], currentUserId?: string): Promise<Post[]> {
+export async function enrichPosts(rows: Record<string, unknown>[], currentUserId?: string): Promise<Post[]> {
   if (rows.length === 0) return [];
 
   const postIds = rows.map(r => r.id as string);
@@ -103,6 +103,40 @@ export async function getPaginatedPosts(
   filter: PostFilter = {},
   currentUserId?: string
 ): Promise<Post[]> {
+  if (filter.circleId) {
+    const { data: cpRows, error: cpErr } = await supabase
+      .from('circle_posts')
+      .select('post_id')
+      .eq('circle_id', filter.circleId)
+      .order('created_at', { ascending: false });
+    if (cpErr) throw new Error(cpErr.message);
+
+    const orderedIds = (cpRows ?? []).map(r => r.post_id as string);
+    if (orderedIds.length === 0) return [];
+
+    let q = supabase.from('posts').select('*').in('id', [...new Set(orderedIds)]);
+
+    if (filter.type && filter.type !== 'all') {
+      q = q.eq('type', filter.type);
+    }
+    if (filter.dietary) {
+      q = q.contains('dietary_tags', [filter.dietary]);
+    }
+    if (filter.cuisine) {
+      q = q.contains('cuisine_tags', [filter.cuisine]);
+    }
+    if (filter.searchQuery?.trim()) {
+      const term = escapeIlike(filter.searchQuery.trim());
+      q = q.or(`title.ilike.%${term}%,description.ilike.%${term}%,location_name.ilike.%${term}%`);
+    }
+
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    const enriched = await enrichPosts((rows ?? []) as Record<string, unknown>[], currentUserId);
+    const map = new Map(enriched.map(p => [p.id, p]));
+    return orderedIds.map(id => map.get(id)).filter((p): p is Post => p != null);
+  }
+
   let q = supabase.from('posts').select('*');
 
   if (filter.type && filter.type !== 'all') {
@@ -113,9 +147,6 @@ export async function getPaginatedPosts(
   }
   if (filter.cuisine) {
     q = q.contains('cuisine_tags', [filter.cuisine]);
-  }
-  if (filter.circleId) {
-    q = q.eq('circle_id', filter.circleId);
   }
   if (filter.searchQuery?.trim()) {
     const term = escapeIlike(filter.searchQuery.trim());

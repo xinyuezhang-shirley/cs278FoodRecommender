@@ -12,7 +12,7 @@ export function AppLayout() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-dvh bg-[#fafaf9]">
+      <div className="flex items-center justify-center h-dvh bg-[#faf9f5]">
         <PageLoader />
       </div>
     );
@@ -24,7 +24,7 @@ export function AppLayout() {
 
   return (
     <div
-      className="bg-[#fafaf9] max-w-lg mx-auto w-full flex flex-col"
+      className="bg-[#faf9f5] max-w-lg mx-auto w-full flex flex-col"
       style={{ height: '100dvh' }}
     >
       <main className="flex-1 min-h-0 overflow-y-auto">

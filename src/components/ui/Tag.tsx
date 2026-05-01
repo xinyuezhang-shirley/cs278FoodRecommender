@@ -1,15 +1,18 @@
 interface TagProps {
   label: string;
-  variant?: 'default' | 'matcha' | 'taro' | 'milk-tea' | 'strawberry';
+  variant?: 'default' | 'matcha' | 'taro' | 'milk-tea' | 'strawberry' | 'nommi-free' | 'nommi-event' | 'nommi-rec';
   size?: 'xs' | 'sm';
 }
 
 const VARIANT_CLASSES = {
-  default: 'bg-[#f3f4f6] text-[#4b5563]',
-  matcha: 'bg-[#f0fdf4] text-[#16a34a]',
-  taro: 'bg-[#faf5ff] text-[#9333ea]',
-  'milk-tea': 'bg-[#fffbeb] text-[#92400e]',
-  strawberry: 'bg-[#fff1f2] text-[#f43f5e]',
+  default: 'bg-[#f5f3ef] text-[#6b7280]',
+  'nommi-free': 'bg-[#eaf1ff] text-[#2f5fc4]',
+  'nommi-event': 'bg-[#fff3dc] text-[#2f5fc4]',
+  'nommi-rec': 'bg-[#f0f4ff] text-[#6f90d8]',
+  matcha: 'bg-[#eaf1ff] text-[#2f5fc4]',
+  taro: 'bg-[#f0ebff] text-[#4338ca]',
+  'milk-tea': 'bg-[#fff3dc] text-[#92400e]',
+  strawberry: 'bg-[#eaf1ff] text-[#6f90d8]',
 };
 
 const SIZE_CLASSES = {
@@ -21,7 +24,7 @@ export function Tag({ label, variant = 'default', size = 'xs' }: TagProps) {
   return (
     <span
       className={[
-        'inline-flex items-center font-medium rounded-full',
+        'inline-flex items-center font-bold rounded-full border border-transparent',
         VARIANT_CLASSES[variant],
         SIZE_CLASSES[size],
       ].join(' ')}
@@ -32,7 +35,7 @@ export function Tag({ label, variant = 'default', size = 'xs' }: TagProps) {
 }
 
 export function PostTypeBadge({ type }: { type: 'free_food' | 'recommendation' | 'event' }) {
-  if (type === 'free_food') return <Tag label="Free Food" variant="matcha" />;
-  if (type === 'event') return <Tag label="Event" variant="taro" />;
+  if (type === 'free_food') return <Tag label="Free Food" variant="nommi-free" />;
+  if (type === 'event') return <Tag label="Event" variant="nommi-event" />;
   return null;
 }

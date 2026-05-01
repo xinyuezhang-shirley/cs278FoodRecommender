@@ -1,184 +1,156 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
+/* Nommi reusable surfaces — relies on `--color-*` from index.css */
 
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
+.app {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--color-nommi-bg);
+  color: var(--color-nommi-text);
 }
 
-.hero {
-  position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
+/* White rounded cards */
+.card,
+.auth-card,
+.profile-card,
+.post-card,
+.community-card {
+  background: var(--color-nommi-card);
+  border: 1px solid var(--color-nommi-border);
+  border-radius: 28px;
+  box-shadow: var(--nommi-shadow);
 }
 
-#center {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
+.auth-card {
+  width: min(360px, 92vw);
+  padding: 36px 32px 28px;
+  text-align: center;
 }
 
-#next-steps {
-  display: flex;
-  border-top: 1px solid var(--border);
-  text-align: left;
-
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
-
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
+/* Chips — playful rounded pills */
+.chip,
+.filter-chip {
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: var(--color-nommi-card);
+  border: 1px solid var(--color-nommi-border);
+  color: var(--color-nommi-text);
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: var(--nommi-soft-shadow);
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
+.chip.active,
+.filter-chip.active {
+  background: var(--color-nommi-blue);
+  color: var(--color-nommi-card);
+  border-color: var(--color-nommi-blue);
 }
 
-#next-steps ul {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
-}
-
-#spacer {
+/* Bottom navigation */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
+  background: var(--color-nommi-card);
+  border-top: 1px solid var(--color-nommi-border);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 50;
+  box-shadow: 0 -8px 28px rgba(31, 41, 55, 0.06);
 }
 
-.ticks {
-  position: relative;
+.nav-item {
+  color: var(--color-nommi-muted);
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+
+.nav-item.active {
+  color: var(--color-nommi-pink);
+}
+
+/* FAB / plus — accent pink */
+.fab,
+.add-button {
+  width: 62px;
+  height: 62px;
+  border-radius: 999px;
+  border: none;
+  background: var(--color-nommi-pink);
+  color: white;
+  font-size: 32px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 14px 34px rgba(255, 79, 115, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.fab:active,
+.add-button:active {
+  transform: scale(0.95);
+}
+
+/* Empty states */
+.empty-state {
+  text-align: center;
+  margin: 72px auto 0;
+  max-width: 320px;
+  color: var(--color-nommi-muted);
+}
+
+.empty-state img {
+  width: 128px;
+  margin-bottom: 16px;
+  opacity: 0.92;
+}
+
+.empty-state h2 {
+  color: var(--color-nommi-text);
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0 0 10px;
+  letter-spacing: 0.02em;
+}
+
+.empty-state p {
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+/* Boba map pins — brand blue outlines */
+.boba-pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-nommi-blue);
+  border: 3px solid var(--color-nommi-card);
+  box-shadow: 0 5px 14px rgba(47, 95, 196, 0.38);
+}
+
+.boba-pin.selected {
+  width: 50px;
+  height: 50px;
+  background: var(--color-nommi-card);
+  border: 3px solid var(--color-nommi-blue);
+  box-shadow: 0 8px 20px rgba(47, 95, 196, 0.25);
+}
+
+.search-bar {
   width: 100%;
-
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
-  }
-
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
-  }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
-  }
+  border-radius: 999px;
+  background: var(--color-nommi-card);
+  border: 1px solid var(--color-nommi-border);
+  box-shadow: var(--nommi-soft-shadow);
+  padding: 12px 18px;
 }

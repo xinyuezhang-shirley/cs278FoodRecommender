@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { X } from 'lucide-react';
 import type { Post } from '../types';
 import { getPaginatedPosts } from '../services/postService';
 import { useAuth } from '../context/AuthContext';
 import { isExpired } from '../utils/helpers';
-import { MapView, groupPostsByLocation, type PinGroup } from '../components/map/MapView';
+import { MapView, groupPostsByLocation, type PlaceGroup } from '../components/map/MapView';
 import { MapSearchBar } from '../components/map/MapSearchBar';
 import { CuisineChipRow } from '../components/map/CuisineChipRow';
 import { DietaryFilterDropdown } from '../components/map/DietaryFilterDropdown';
@@ -13,29 +12,30 @@ import { OpenNowDropdown } from '../components/map/OpenNowDropdown';
 import { RatingDropdown } from '../components/map/RatingDropdown';
 import { SortByDropdown } from '../components/map/SortByDropdown';
 import { LocateMeButton } from '../components/map/LocateMeButton';
-import { PostGrid } from '../components/posts/PostGrid';
+import { MapPinExploreSheet } from '../components/map/MapPinExploreSheet';
 import { PostDetail } from '../components/posts/PostDetail';
 import { Modal } from '../components/ui/Modal';
 import { PageLoader } from '../components/ui/LoadingSpinner';
+import emptyNoPostFound from '../assets/nommi/empty_no_post_found.png';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useMapFilters } from '../hooks/useMapFilters';
 
 const DEFAULT_CENTER: [number, number] = [37.4290, -122.1685];
 const DEFAULT_ZOOM = 14;
+const PLACE_FOCUS_ZOOM = 16;
 
 export function MapPage() {
   const { user } = useAuth();
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [mapCenter, setMapCenter] = useState<[number, number]>(DEFAULT_CENTER);
+  const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  // When a pin is tapped, narrow the post list to that location
-  const [locationFilter, setLocationFilter] = useState<string>('');
+  const [selectedPlace, setSelectedPlace] = useState<PlaceGroup | null>(null);
   const hasFlownRef = useRef(false);
 
   const { state: geoState, request: requestLocation, userLocation } = useGeolocation();
 
-  // Fly to user location only the first time it becomes available
   useEffect(() => {
     if (userLocation && !hasFlownRef.current) {
       hasFlownRef.current = true;
@@ -63,19 +63,29 @@ export function MapPage() {
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
 
-  // Posts shown in the list: further narrow by pin selection
-  const displayPosts = useMemo(
-    () => locationFilter
-      ? filteredPosts.filter(p => p.location_name === locationFilter)
-      : filteredPosts,
-    [filteredPosts, locationFilter]
-  );
-
-  const pinGroups = useMemo(() => groupPostsByLocation(filteredPosts), [filteredPosts]);
+  const placeGroups = useMemo(() => groupPostsByLocation(filteredPosts), [filteredPosts]);
   const freeActiveCount = allPosts.filter(p => p.is_free_food && !isExpired(p.expires_at)).length;
 
-  function handlePinClick(group: PinGroup) {
-    setLocationFilter(prev => prev === group.locationName ? '' : group.locationName);
+  useEffect(() => {
+    setSelectedPlace(prev => {
+      if (!prev) return null;
+      const next = placeGroups.find(g => g.id === prev.id);
+      return next ?? null;
+    });
+  }, [placeGroups]);
+
+  useEffect(() => {
+    const id = selectedPlace?.id;
+    if (!selectedPlace || !id) {
+      setMapZoom(DEFAULT_ZOOM);
+      return;
+    }
+    setMapCenter([selectedPlace.lat, selectedPlace.lng]);
+    setMapZoom(PLACE_FOCUS_ZOOM);
+  }, [selectedPlace?.id, selectedPlace?.lat, selectedPlace?.lng]);
+
+  function handlePlaceClick(place: PlaceGroup) {
+    setSelectedPlace(prev => (prev?.id === place.id ? null : place));
   }
 
   function handleLocateMe() {
@@ -88,23 +98,25 @@ export function MapPage() {
 
   function handleCuisineChange(v: string) {
     setCuisine(v);
-    setLocationFilter('');
+    setSelectedPlace(null);
   }
 
-  return (
-    <div className="flex flex-col min-h-full bg-[#fafaf9]">
+  function handleMapTap() {
+    setSelectedPlace(null);
+  }
 
-      {/* ── Sticky filter header ── */}
-      <div className="sticky top-0 z-[500] bg-[#fafaf9]/96 backdrop-blur-sm px-3 pt-3 pb-2 space-y-1.5"
-        style={{ backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-      >
+  const freeFilterOn = filters.cuisine === 'free_food';
+
+  return (
+    <div className="flex flex-col min-h-full bg-[#faf9f5] px-3 pb-24">
+
+      <div className="sticky top-0 z-[500] shrink-0 bg-[#faf9f5]/92 backdrop-blur-md pt-2 pb-2 space-y-2 border-b border-[#e5e7eb]/50">
         <MapSearchBar
           value={filters.search}
-          onChange={v => { setSearch(v); setLocationFilter(''); }}
+          onChange={v => { setSearch(v); setSelectedPlace(null); }}
         />
         <CuisineChipRow active={filters.cuisine} onChange={handleCuisineChange} />
-        {/* Filter dropdowns — no overflow-x-auto so menus aren't clipped */}
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap items-center">
           <DietaryFilterDropdown selected={filters.dietary} onChange={setDietary} />
           <DistanceFilterDropdown
             value={filters.distance}
@@ -114,27 +126,72 @@ export function MapPage() {
           />
           <OpenNowDropdown value={filters.openNow} onChange={setOpenNow} />
           <RatingDropdown value={filters.rating} onChange={setRating} />
+          <div className="ml-auto">
+            <SortByDropdown value={filters.sortBy} onChange={setSortBy} />
+          </div>
         </div>
+        {activeFilterCount > 0 && (
+          <p className="text-[10px] font-semibold text-[#9ca3af]">
+            {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''} active · pins update live
+          </p>
+        )}
       </div>
 
-      {/* ── Map section (fixed height) ── */}
-      <div className="relative w-full flex-shrink-0" style={{ height: '42vh', minHeight: '260px' }}>
+      {freeActiveCount > 0 && (
+        <div className="relative z-[600] flex justify-center pt-2 pb-1 pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => handleCuisineChange(filters.cuisine === 'free_food' ? '' : 'free_food')}
+            className={[
+              'flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-black shadow-[0_8px_24px_rgba(47,95,196,0.18)] border transition-all',
+              freeFilterOn
+                ? 'bg-[#2f5fc4] text-white border-[#2f5fc4] ring-2 ring-[#2f5fc4]/25'
+                : 'bg-white/95 text-[#2f5fc4] border-[#eaf1ff] backdrop-blur-sm',
+            ].join(' ')}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${freeFilterOn ? 'bg-[#fff3dc]' : 'bg-[#2f5fc4]'} animate-pulse`} />
+            {freeActiveCount} free food now
+          </button>
+        </div>
+      )}
+
+      <div
+        className={[
+          'relative mx-auto w-full mt-1 isolate',
+          'h-[min(560px,calc(100dvh-11rem))] min-h-[300px]',
+          'overflow-hidden rounded-[24px] border border-[#e5e7eb]/80',
+          'shadow-[0_10px_32px_rgba(47,95,196,0.1)]',
+        ].join(' ')}
+      >
         {loading ? (
-          <div className="flex items-center justify-center h-full bg-[#f0f0ec]">
+          <div className="flex items-center justify-center h-full bg-[#eaf1ff]/50">
             <PageLoader />
           </div>
         ) : (
           <MapView
-            pinGroups={pinGroups}
+            placeGroups={placeGroups}
             center={mapCenter}
-            zoom={DEFAULT_ZOOM}
-            onPinClick={handlePinClick}
-            onMapTap={() => setLocationFilter('')}
+            zoom={mapZoom}
+            onPlaceClick={handlePlaceClick}
+            onMapTap={handleMapTap}
             userLocation={userLocation}
           />
         )}
 
-        {/* Locate-me button — absolute overlay above Leaflet panes */}
+        {!loading && placeGroups.length === 0 && (
+          <div className="absolute inset-0 z-[400] flex flex-col items-center justify-center bg-[#faf9f5]/93 backdrop-blur-[3px] px-6 text-center pointer-events-none">
+            <img
+              src={emptyNoPostFound}
+              alt="Nommi empty cup illustration — no food pins nearby yet"
+              className="w-36 sm:w-40 max-w-[10rem] h-auto object-contain mb-4 drop-shadow-[0_4px_12px_rgba(47,95,196,0.12)]"
+            />
+            <p className="text-base font-black text-[#2f5fc4] tracking-tight">No food here yet 👀</p>
+            <p className="text-sm text-[#6b7280] mt-2 max-w-[240px] leading-relaxed">
+              Be the first to drop something
+            </p>
+          </div>
+        )}
+
         {!loading && (
           <LocateMeButton
             geoState={geoState}
@@ -142,63 +199,25 @@ export function MapPage() {
             onLocate={handleLocateMe}
           />
         )}
-
-        {/* Live free food badge */}
-        {freeActiveCount > 0 && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] pointer-events-auto">
-            <button
-              onClick={() => handleCuisineChange(filters.cuisine === 'free_food' ? '' : 'free_food')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
-              style={{
-                background: filters.cuisine === 'free_food' ? '#16a34a' : 'rgba(255,255,255,0.94)',
-                color: filters.cuisine === 'free_food' ? 'white' : '#16a34a',
-                backdropFilter: 'blur(12px)',
-                boxShadow: '0 2px 10px rgba(22,163,74,0.22)',
-                border: `1px solid ${filters.cuisine === 'free_food' ? '#16a34a' : 'rgba(22,163,74,0.25)'}`,
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse"
-                style={{ background: filters.cuisine === 'free_food' ? 'white' : '#16a34a' }} />
-              {freeActiveCount} free food now
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* ── Posts section ── */}
-      <div className="flex-1 px-3 pt-3 pb-6">
+      {!loading && placeGroups.length > 0 && (
+        <p className="text-center text-[11px] font-semibold text-[#9ca3af] tracking-wide pt-3 pb-1">
+          Tap a place to see what&apos;s happening there
+        </p>
+      )}
 
-        {/* Row: post count + location filter chip + sort */}
-        <div className="flex items-center justify-between mb-2 gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs text-[#6b7280] flex-shrink-0">
-              {displayPosts.length} post{displayPosts.length !== 1 ? 's' : ''}
-              {activeFilterCount > 0 && ` · ${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''}`}
-            </span>
-            {locationFilter && (
-              <button
-                onClick={() => setLocationFilter('')}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold flex-shrink-0"
-                style={{ background: '#1a1a1a', color: 'white' }}
-              >
-                {locationFilter}
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-          <SortByDropdown value={filters.sortBy} onChange={setSortBy} />
-        </div>
+      <MapPinExploreSheet
+        group={selectedPlace}
+        onClose={() => {
+          setSelectedPlace(null);
+        }}
+        onOpenPostDetail={post => {
+          setSelectedPost(post);
+          setSelectedPlace(null);
+        }}
+      />
 
-        <PostGrid
-          posts={displayPosts}
-          loading={loading}
-          onPostClick={setSelectedPost}
-          emptyTitle={locationFilter ? 'No posts at this pin' : 'No posts match'}
-          emptyDescription={locationFilter ? 'Tap the pin again to clear' : 'Try adjusting your filters'}
-        />
-      </div>
-
-      {/* Post detail modal */}
       <Modal open={!!selectedPost} onClose={() => setSelectedPost(null)} fullScreen>
         {selectedPost && (
           <PostDetail
@@ -208,6 +227,7 @@ export function MapPage() {
               setAllPosts(prev => prev.filter(p => p.id !== selectedPost.id));
               setSelectedPost(null);
             }}
+            onActivityMayChange={() => loadPosts()}
           />
         )}
       </Modal>

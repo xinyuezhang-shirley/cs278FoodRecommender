@@ -1,3 +1,4 @@
+import React from 'react';
 import type { Post } from '../../types';
 import { PostCard } from './PostCard';
 import { SkeletonCard } from '../ui/LoadingSpinner';
@@ -7,28 +8,35 @@ interface PostGridProps {
   posts: Post[];
   loading?: boolean;
   onPostClick: (post: Post) => void;
+  onSharePost?: (post: Post) => void;
   emptyTitle?: string;
   emptyDescription?: string;
+  emptyIcon?: string;
+  /** Nommi empty-state illustration */
+  emptyImageSrc?: string;
+  emptyImageAlt?: string;
+  emptyImageClassName?: string;
   emptyAction?: React.ReactNode;
 }
-
-import React from 'react';
 
 export function PostGrid({
   posts,
   loading = false,
   onPostClick,
+  onSharePost,
   emptyTitle = 'No posts yet',
   emptyDescription,
+  emptyIcon,
+  emptyImageSrc,
+  emptyImageAlt,
+  emptyImageClassName,
   emptyAction,
 }: PostGridProps) {
   if (loading) {
     return (
-      <div className="masonry-grid mt-3">
+      <div className="grid gap-4 mt-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="masonry-item">
-            <SkeletonCard />
-          </div>
+          <SkeletonCard key={i} />
         ))}
       </div>
     );
@@ -37,20 +45,26 @@ export function PostGrid({
   if (posts.length === 0) {
     return (
       <EmptyState
-        icon="🍜"
+        icon={emptyIcon ?? '🍜'}
         title={emptyTitle}
         description={emptyDescription}
         action={emptyAction}
+        imageSrc={emptyImageSrc}
+        imageAlt={emptyImageAlt}
+        imageClassName={emptyImageClassName}
       />
     );
   }
 
   return (
-    <div className="masonry-grid mt-3">
+    <div className="grid gap-4 mt-3">
       {posts.map(post => (
-        <div key={post.id} className="masonry-item">
-          <PostCard post={post} onClick={() => onPostClick(post)} />
-        </div>
+        <PostCard
+          key={post.id}
+          post={post}
+          onClick={() => onPostClick(post)}
+          onShareToCircle={onSharePost ? () => onSharePost(post) : undefined}
+        />
       ))}
     </div>
   );

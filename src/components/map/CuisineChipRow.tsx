@@ -27,20 +27,14 @@ export function CuisineChipRow({ active, onChange }: CuisineChipRowProps) {
         return (
           <button
             key={chip.value}
+            type="button"
             onClick={() => onChange(chip.value)}
-            className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-            style={
+            className={[
+              'flex-shrink-0 rounded-full px-3 py-2 text-sm font-bold transition-all border',
               isActive
-                ? { background: '#1a1a1a', color: 'white', boxShadow: '0 1px 6px rgba(0,0,0,0.18)' }
-                : {
-                    background: 'rgba(255,255,255,0.92)',
-                    color: '#374151',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    border: '1px solid rgba(0,0,0,0.07)',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-                  }
-            }
+                ? 'bg-[#2f5fc4] text-white border-[#2f5fc4]'
+                : 'bg-[#f5f7ff] text-[#6b7280] border-[#e5e7eb] hover:border-[#2f5fc4]/35',
+            ].join(' ')}
           >
             {chip.label}
           </button>
