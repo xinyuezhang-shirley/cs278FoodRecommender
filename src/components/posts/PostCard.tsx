@@ -119,10 +119,11 @@ export function PostCard({
             Shared by{' '}
             <button
               type="button"
-              className="text-[#2f5fc4] underline-offset-2 hover:underline"
+              disabled={!post.circle_share?.shared_by_id}
+              className="text-[#2f5fc4] underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline"
               onClick={e => {
                 e.stopPropagation();
-                navigate(`/app/profile/${post.circle_share!.shared_by_id}`);
+                if (post.circle_share?.shared_by_id) navigate(`/app/profile/${post.circle_share.shared_by_id}`);
               }}
             >
               @{post.circle_share.shared_by?.username ?? '…'}

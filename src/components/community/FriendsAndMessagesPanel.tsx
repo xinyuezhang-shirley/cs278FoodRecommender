@@ -82,6 +82,8 @@ export function FriendsAndMessagesPanel({
   const [refreshing, setRefreshing] = useState(false);
   const [withdrawingRequestId, setWithdrawingRequestId] = useState<string | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
+  const activeThreadIdRef = useRef<string | null>(null);
+  const messageLoadSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -124,16 +126,29 @@ export function FriendsAndMessagesPanel({
     refreshRef.current = refresh;
   }, [refresh]);
 
+  useEffect(() => {
+    activeThreadIdRef.current = activeThread?.id ?? null;
+  }, [activeThread?.id]);
+
+  const guardedLoadMessages = useCallback(async (threadId: string) => {
+    const seq = ++messageLoadSeqRef.current;
+    const rows = await listThreadMessages(threadId);
+    if (seq !== messageLoadSeqRef.current) return;
+    if (activeThreadIdRef.current !== threadId) return;
+    setMessages(rows);
+  }, []);
+
   /** Open DM with anyone on Nommi — friendship not required (RLS: you include yourself). */
   const startDmWithUser = useCallback(async (remoteUserId: string) => {
     const trimmed = remoteUserId.trim();
     if (!trimmed || trimmed === userId) return;
     const thread = await openOrCreateDirectThread(userId, trimmed);
     setActiveThread(thread);
-    setMessages(await listThreadMessages(thread.id));
+    activeThreadIdRef.current = thread.id;
+    await guardedLoadMessages(thread.id);
     setTab('chats');
     await refreshRef.current();
-  }, [userId]);
+  }, [guardedLoadMessages, userId]);
 
   useEffect(() => {
     const raw = bootstrapDmWithUserId?.trim() ?? '';
@@ -212,9 +227,7 @@ export function FriendsAndMessagesPanel({
           filter: `thread_id=eq.${tid}`,
         },
         () => {
-          void listThreadMessages(tid)
-            .then(setMessages)
-            .catch(() => undefined);
+          void guardedLoadMessages(tid).catch(() => undefined);
           void refreshRef.current().catch(() => undefined);
         },
       )
@@ -222,7 +235,7 @@ export function FriendsAndMessagesPanel({
     return () => {
       void supabase.removeChannel(ch);
     };
-  }, [activeThread?.id]);
+  }, [activeThread?.id, guardedLoadMessages]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedFriendSearch(friendSearch.trim()), 320);
@@ -346,27 +359,28 @@ export function FriendsAndMessagesPanel({
 
   async function openThread(thread: DirectMessageThread) {
     setActiveThread(thread);
-    setMessages(await listThreadMessages(thread.id));
+    activeThreadIdRef.current = thread.id;
+    await guardedLoadMessages(thread.id);
     await refresh();
   }
 
   async function handleSendComposer() {
     if (!activeThread || !composer.trim()) return;
-    await sendThreadMessage(activeThread.id, userId, composer);
+    const threadId = activeThread.id;
+    await sendThreadMessage(threadId, userId, composer);
     setComposer('');
-    const next = await listThreadMessages(activeThread.id);
-    setMessages(next);
+    await guardedLoadMessages(threadId);
     await refresh();
   }
 
   async function handleSendImageFile(file: File) {
     if (!activeThread) return;
+    const threadId = activeThread.id;
     setSendingImage(true);
     try {
       const compressed = await compressImageFile(file, 1280, 0.84);
-      await sendThreadImage(activeThread.id, userId, compressed);
-      const next = await listThreadMessages(activeThread.id);
-      setMessages(next);
+      await sendThreadImage(threadId, userId, compressed);
+      await guardedLoadMessages(threadId);
       await refresh();
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Could not send image');

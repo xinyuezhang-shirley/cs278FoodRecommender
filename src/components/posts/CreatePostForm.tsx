@@ -393,7 +393,7 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost,
   }
 
   const canPost =
-    (form.title.trim().length > 0 || !!form.image_url) &&
+    form.title.trim().length > 0 &&
     form.location_name.trim().length > 0 &&
     (!form.is_free_food || !!form.expires_at);
 

@@ -15,6 +15,10 @@
   --color-nommi-pink: #ff4f73;
   --nommi-shadow: 0 18px 45px rgba(31, 41, 55, 0.14);
   --nommi-soft-shadow: 0 8px 24px rgba(47, 95, 196, 0.1);
+  --nommi-radius-chip: 999px;
+  --nommi-radius-card: 28px;
+  --nommi-motion-fast: 160ms;
+  --nommi-motion-spring: 340ms cubic-bezier(0.22, 1, 0.36, 1);
 
   --nommi-blue: var(--color-nommi-blue);
   --nommi-blue-soft: var(--color-nommi-blue-soft);
@@ -108,6 +112,15 @@ body {
 .nommi-wobble { animation: nommi-wobble 2.4s ease-in-out infinite; }
 .nommi-pulse-dot { animation: nommi-pulse-dot 1.05s ease-in-out infinite; }
 .nommi-orbit-ring { animation: nommi-ring-spin 3.4s linear infinite; }
+.nommi-surface-glass {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.nommi-soft-depth {
+  box-shadow: 0 12px 28px rgba(47, 95, 196, 0.1);
+}
 
 .nommi-tilted-grid {
   transform: rotate(-14deg) scale(1.2);

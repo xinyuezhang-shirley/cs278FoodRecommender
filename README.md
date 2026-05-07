@@ -1,102 +1,118 @@
 # Nommi — Stanford Food Discovery
 
-A mobile-first social food discovery platform for Stanford students. Share free food sightings, restaurant recommendations, and food events on and around campus.
+A mobile-first social food discovery app for Stanford students. Share free-food sightings, recommendations, and events around campus with social layers (circles, friends, DMs, reactions, collections).
 
 ## Quick Start
 
+From repo root:
+
 ```bash
-cd nommi
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173 in your browser (best experienced in mobile viewport — use DevTools device mode).
-
-**Demo account (Supabase seed):** `nommi278@nommi.stanford.demo` / `NommiDemo1!` — profile `@nommi278`. Extra seeds: bob & carmen at `@nommi.stanford.demo`.
+Open [http://localhost:5173](http://localhost:5173) (best in a mobile viewport / device mode).
 
 ---
 
-## Features
+## Core Features
 
-| Tab | What it does |
-|-----|-------------|
-| **Feed** | Rednote-style 2-column masonry grid with filter chips and search |
-| **Map** | SVG campus map with color-coded food pins and tap-to-preview |
-| **Community** | Food Circles (join/leave), top contributors, activity feed |
-| **Profile** | Stats, Boba Collection achievements, Food Identity Graph |
+| Area | What it does |
+|---|---|
+| **Feed** | Masonry feed, search, cuisine + dietary + distance filters, quick saved/liked links |
+| **Map** | Live map pins grouped by place, map filters, place exploration sheet |
+| **Community** | Circles, activity feed, top contributors, friends + direct messages |
+| **Profile** | User stats, identity/settings, relationship actions, personal collections |
+| **Posting** | Create/edit posts with place picker, images, tags, and free-food expiration |
 
-**Create Post** — available on Feed and Map (pink + button), with type selector, campus location picker, cuisine/dietary tags, and expiration time for free food posts.
+### Recent Updates
+
+- Per-type reactions (`like` and `still_there` can coexist)
+- DM image sending support (Supabase storage-backed)
+- Realtime + async race-condition hardening across feed/map/profile/chat
+- Refreshed loading/empty visuals using custom Nommi graphics
+- More fluid, rounded, boba-themed micro-interactions and motion styling
 
 ---
 
 ## Stack
 
-- **Frontend:** React 18 + TypeScript + Vite
-- **Styling:** Tailwind CSS v4
-- **Routing:** React Router v6
-- **Icons:** Lucide React
-- **Backend (default):** Mock service layer with `localStorage` persistence — no server needed
-- **Backend (production-ready):** Supabase (auth, Postgres, RLS, Storage)
+- React 18 + TypeScript + Vite
+- Tailwind CSS v4
+- React Router v6
+- Lucide React
+- Supabase (Auth, Postgres, RLS, Realtime, Storage)
 
 ---
 
-## Connecting Supabase
+## Environment Setup
 
-1. Create a project at [supabase.com](https://supabase.com)
-2. Copy `.env.example` → `.env.local` and fill in your credentials:
-   ```
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-key
-   ```
-3. Run the migration in your Supabase SQL editor:
-   `supabase/migrations/001_initial_schema.sql`
-4. Replace the mock service calls in `src/services/` with Supabase client calls.
-   The service interfaces match Supabase's API shape for easy swapping.
+Copy `.env.example` to `.env.local` and fill in:
 
----
-
-## Project Structure
-
+```bash
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
+
+Optional maps/geocoding variables are supported by the location services.
+
+---
+
+## Supabase Setup (Required)
+
+Run all migrations (recommended via CLI from repo root):
+
+```bash
+supabase db push
+```
+
+This applies social/DM schemas, reaction constraints, profile/friend policies, and storage setup including:
+
+- `dm_messages.message_type` + `image_url`
+- `dm-images` storage bucket + policies for chat image uploads
+
+If using SQL editor manually, execute migrations in order under `supabase/migrations/`.
+
+---
+
+## Graphics + Motion
+
+Custom assets live in:
+
+- `public/graphics/nommi-logo.png`
+- `public/graphics/nommi-loading.png`
+- `public/graphics/nommi-empty-filter.png`
+
+They are used by shared UI components (loading/empty/fail states and decorative non-home backgrounds). Motion respects `prefers-reduced-motion`.
+
+---
+
+## Project Structure (High Level)
+
+```text
 src/
   components/
-    layout/         BottomNav, AppLayout (auth guard)
-    ui/             Button, Tag, Avatar, Modal/BottomSheet, LoadingSpinner, EmptyState
-    posts/          PostCard, PostGrid, PostDetail, FilterChips, CreatePostForm
-    map/            CampusMap (SVG), PinBottomSheet
-    community/      CircleCard, CircleDetail
-    profile/        BobaCollection, FoodIdentityGraph
-  pages/            FeedPage, MapPage, CommunityPage, ProfilePage, AuthPage
-  services/         authService, postService, circleService, commentService
-                    storageService (localStorage adapter), mockData (seed data)
-  context/          AuthContext
-  types/            index.ts — all TypeScript interfaces
-  utils/            helpers.ts (dates, formatting), sanitize.ts (input validation)
+    community/      circles, DMs, sharing
+    layout/         app shell + bottom nav
+    map/            map view, pins, filters
+    posts/          create/edit/detail/grid/cards
+    profile/        profile panels and relationship controls
+    ui/             button, modal, loaders, empty states
+  context/          auth context
+  hooks/            realtime + map/location hooks
+  pages/            feed/map/community/profile/auth/post/collections/edit
+  services/         supabase data services
+  types/            shared TypeScript types
+  utils/            helpers, routing, sanitize, image/share utilities
 supabase/
-  migrations/       001_initial_schema.sql (tables + RLS policies)
+  migrations/       schema + RLS + storage policies
 ```
 
 ---
 
-## Security
+## Security Notes
 
-- Input sanitized and length-limited before persistence (`sanitize.ts`)
-- Protected routes redirect to `/login` via `AppLayout` guard
-- Post edit/delete enforces `author_id === currentUserId` in the service layer
-- Supabase migration includes Row Level Security policies on all tables
-- No secrets or keys hardcoded — use `.env.local`
-
----
-
-## Design System
-
-| Token | Color | Use |
-|-------|-------|-----|
-| Strawberry | `#f43f5e` | Primary action, create button |
-| Matcha | `#16a34a` | Free food tags, expiration timers |
-| Taro | `#9333ea` | Events, social/boba |
-| Milk Tea | `#92400e` | Trending, popular |
-| Background | `#fafaf9` | Warm off-white app background |
-| Card | `#ffffff` | Content cards |
-
-Font: **Inter** · Spacing: 8px system · Border radius: 8–12px
+- Input is sanitized/length-limited before persistence
+- Auth-guarded app layout and ownership checks for post edits/deletes
+- Supabase RLS policies enforce row-level access
+- Secrets are never committed; keep credentials in `.env.local`

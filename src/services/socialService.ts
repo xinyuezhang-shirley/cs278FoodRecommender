@@ -39,7 +39,7 @@ export async function listFriendships(userId: string): Promise<Friendship[]> {
     return readLocal<Friendship>(FRIENDSHIPS_KEY).filter(f => f.user_a_id === userId || f.user_b_id === userId);
   }
   const rows = (data ?? []) as Friendship[];
-  return rows.length > 0 ? rows : readLocal<Friendship>(FRIENDSHIPS_KEY).filter(f => f.user_a_id === userId || f.user_b_id === userId);
+  return rows;
 }
 
 /**
@@ -179,8 +179,7 @@ export async function listDmThreads(userId: string): Promise<DirectMessageThread
 
   if (error) return localCombined.sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
   const rows = (data ?? []) as DirectMessageThread[];
-  const list = rows.length > 0 ? rows : localCombined;
-  return [...list].sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
+  return [...rows].sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
 }
 
 interface SendFriendResult {

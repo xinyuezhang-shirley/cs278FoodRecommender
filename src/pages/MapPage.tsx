@@ -168,7 +168,7 @@ export function MapPage() {
       </div>
 
       {freeActiveCount > 0 && (
-        <div className="relative z-[600] flex justify-center pt-2 pb-1 pointer-events-auto">
+        <div className="relative z-[450] flex justify-center pt-2 pb-2 pointer-events-auto">
           <button
             type="button"
             onClick={() => handleCuisineChange(filters.cuisine === 'free_food' ? '' : 'free_food')}
@@ -187,7 +187,7 @@ export function MapPage() {
 
       <div
         className={[
-          'relative mx-auto w-full mt-1 isolate',
+          'relative mx-auto w-full mt-2 isolate',
           'h-[min(560px,calc(100dvh-11rem))] min-h-[300px]',
           'overflow-hidden rounded-[24px] border border-[#e5e7eb]/80',
           'shadow-[0_10px_32px_rgba(47,95,196,0.1)]',

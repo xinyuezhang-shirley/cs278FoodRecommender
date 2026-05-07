@@ -42,7 +42,7 @@ export function Button({
 }: ButtonProps) {
   const primaryClasses = [
     PRIMARY_SIZE_PADDING[size],
-    'rounded-full bg-linear-to-r from-[#2f5fc4] to-[#6f90d8] text-white font-black tracking-wide shadow-[0_10px_24px_rgba(47,95,196,0.24)] transition active:scale-95',
+    'rounded-full bg-linear-to-r from-[#2f5fc4] to-[#6f90d8] text-white font-black tracking-wide shadow-[0_10px_24px_rgba(47,95,196,0.24)] transition-[transform,box-shadow,filter,background-color] duration-200 active:scale-[0.97] hover:shadow-[0_14px_30px_rgba(47,95,196,0.28)] hover:-translate-y-0.5',
     'disabled:active:scale-100',
     fullWidth ? 'w-full' : '',
     className,
@@ -58,7 +58,7 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={[
-        'inline-flex items-center justify-center transition-colors duration-150',
+        'inline-flex items-center justify-center transition-[transform,box-shadow,background-color,color] duration-200 motion-safe:active:scale-[0.98]',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variant === 'primary' ? primaryClasses : nonPrimaryClasses,
       ].join(' ')}

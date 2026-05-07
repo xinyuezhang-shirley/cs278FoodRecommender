@@ -28,7 +28,9 @@ export function formatDate(dateStr: string): string {
 
 export function isExpired(dateStr?: string): boolean {
   if (!dateStr) return false;
-  return isPast(new Date(dateStr));
+  const d = new Date(dateStr);
+  if (!Number.isFinite(d.getTime())) return false;
+  return isPast(d);
 }
 
 /** Compare Supabase `auth.users` / `profiles.id` with `posts.author_id` (UUID string quirks). */

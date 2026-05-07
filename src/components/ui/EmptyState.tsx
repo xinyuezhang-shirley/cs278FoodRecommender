@@ -24,9 +24,9 @@ export function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
       {imageSrc ? (
-        <img src={imageSrc} alt={imageAlt} className={imageClassName} />
+        <img src={imageSrc} alt={imageAlt} className={`${imageClassName} nommi-float-soft`} />
       ) : (
-        <div className="text-5xl mb-4 drop-shadow-[0_4px_12px_rgba(47,95,196,0.12)]" aria-hidden>
+        <div className="text-5xl mb-4 drop-shadow-[0_4px_12px_rgba(47,95,196,0.12)] nommi-float-soft" aria-hidden>
           {icon}
         </div>
       )}
