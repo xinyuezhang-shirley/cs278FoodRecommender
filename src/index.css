@@ -69,9 +69,56 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .nommi-card-enter,
-  .nommi-fade-rise {
+  .nommi-fade-rise,
+  .nommi-float,
+  .nommi-float-soft,
+  .nommi-wobble,
+  .nommi-pulse-dot,
+  .nommi-orbit-ring {
     animation: none !important;
   }
+}
+
+@keyframes nommi-float {
+  0%, 100% { transform: translateY(0) rotate(-1.2deg); }
+  50% { transform: translateY(-8px) rotate(1deg); }
+}
+
+@keyframes nommi-float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes nommi-wobble {
+  0%, 100% { transform: rotate(-2deg) translateY(0); }
+  50% { transform: rotate(2deg) translateY(-4px); }
+}
+
+@keyframes nommi-pulse-dot {
+  0%, 100% { transform: scale(0.7); opacity: 0.45; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes nommi-ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+.nommi-float { animation: nommi-float 2.6s ease-in-out infinite; }
+.nommi-float-soft { animation: nommi-float-soft 2s ease-in-out infinite; }
+.nommi-wobble { animation: nommi-wobble 2.4s ease-in-out infinite; }
+.nommi-pulse-dot { animation: nommi-pulse-dot 1.05s ease-in-out infinite; }
+.nommi-orbit-ring { animation: nommi-ring-spin 3.4s linear infinite; }
+
+.nommi-tilted-grid {
+  transform: rotate(-14deg) scale(1.2);
+  background-image:
+    linear-gradient(rgba(47, 95, 196, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47, 95, 196, 0.1) 1px, transparent 1px),
+    url('/graphics/nommi-logo.png');
+  background-size: 34px 34px, 34px 34px, 72px 72px;
+  background-position: 0 0, 0 0, 18px 18px;
+  background-repeat: repeat;
+  filter: saturate(1.1);
 }
 
 h1,

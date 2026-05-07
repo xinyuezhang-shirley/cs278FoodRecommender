@@ -13,6 +13,7 @@ import { CircleDetail } from '../components/community/CircleDetail';
 import { CreateCircleModal } from '../components/community/CreateCircleModal';
 import { Avatar } from '../components/ui/Avatar';
 import { PageLoader } from '../components/ui/LoadingSpinner';
+import { LogoPatternBackground } from '../components/ui/LogoPatternBackground';
 import { EmptyState } from '../components/ui/EmptyState';
 import { timeAgo } from '../utils/helpers';
 import { PostTypeBadge } from '../components/ui/Tag';
@@ -132,9 +133,10 @@ export function CommunityPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
+    <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
+      <LogoPatternBackground />
 
-      <div className="pt-4 pb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="relative z-[1] pt-4 pb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-black text-[#2f5fc4] tracking-tight">Food circles</h1>
           <p className="text-sm text-[#6b7280] mt-1">
@@ -161,7 +163,7 @@ export function CommunityPage() {
         />
       )}
 
-      <section className="mb-8">
+      <section className="relative z-[1] mb-8">
         <h2 className="text-lg font-black text-[#2f5fc4] mb-1 tracking-tight">Your circles</h2>
         <p className="text-xs text-[#6b7280] font-semibold mb-3">
           Spaces you’ve joined — open one to see what members have curated.
@@ -190,7 +192,7 @@ export function CommunityPage() {
         )}
       </section>
 
-      <section className="mb-8">
+      <section className="relative z-[1] mb-8">
         <h2 className="text-lg font-black text-[#2f5fc4] mb-1 tracking-tight">Discover circles</h2>
         <p className="text-xs text-[#6b7280] font-semibold mb-3">Join when you’re ready to chip in favorites.</p>
         {discoverCircles.length === 0 ? (
@@ -212,7 +214,7 @@ export function CommunityPage() {
       </section>
 
       {!user ? null : activity.length === 0 && joinedCircles.length > 0 ? (
-        <section className="mb-8">
+        <section className="relative z-[1] mb-8">
           <h2 className="text-lg font-black text-[#2f5fc4] mb-2 tracking-tight">Activity in your circles</h2>
           <p className="text-sm text-[#6b7280]">
             When someone (including you) shares a post to a circle you’re in, it will show here.
@@ -221,7 +223,7 @@ export function CommunityPage() {
       ) : null}
 
       {user && activity.length > 0 && (
-        <section className="mb-8">
+        <section className="relative z-[1] mb-8">
           <h2 className="text-lg font-black text-[#2f5fc4] mb-3 tracking-tight">Activity in your circles</h2>
           <div className="space-y-3">
             {activity.map(row => (
@@ -291,7 +293,7 @@ export function CommunityPage() {
       )}
 
       {user && topContributors.length > 0 && joinedCircles.length > 0 && (
-        <section className="mb-8">
+        <section className="relative z-[1] mb-8">
           <h2 className="text-lg font-black text-[#2f5fc4] mb-3 tracking-tight">
             Top contributors in your circles
           </h2>

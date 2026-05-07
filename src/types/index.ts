@@ -186,6 +186,8 @@ export interface DirectMessage {
   id: string;
   thread_id: string;
   sender_id: string;
-  body: string;
+  body?: string;
+  message_type?: 'text' | 'image';
+  image_url?: string;
   created_at: string;
 }

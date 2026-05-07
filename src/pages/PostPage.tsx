@@ -4,7 +4,7 @@ import type { Post } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { getPostById } from '../services/postService';
 import { PostDetail } from '../components/posts/PostDetail';
-import { PageLoader } from '../components/ui/LoadingSpinner';
+import { FailStateArt, PageLoader } from '../components/ui/LoadingSpinner';
 import { resolveAppReturnTarget } from '../utils/helpers';
 
 export function PostPage() {
@@ -68,6 +68,7 @@ export function PostPage() {
   if (notFound || !post) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] px-6 bg-[#faf9f5] gap-4 text-center">
+        <FailStateArt />
         <p className="text-sm font-bold text-[#1a1a1a]">This post isn’t available.</p>
         <button
           type="button"

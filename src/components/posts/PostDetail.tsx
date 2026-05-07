@@ -126,12 +126,11 @@ export function PostDetail({
     setReacting(true);
     try {
       const result = await reactToPost(post.id, user.id, type);
-      let merged!: Post;
       setPost((p) => {
-        merged = { ...p, ...result };
-        return merged;
+        const next = { ...p, ...result };
+        onPostChange?.(next);
+        return next;
       });
-      queueMicrotask(() => onPostChange?.(merged));
     } catch {
       setPost(previous);
       setError('Failed to react. Please try again.');
@@ -148,12 +147,11 @@ export function PostDetail({
     try {
       const newComment = await addComment(post.id, commentText, user.id);
       setComments(prev => [...prev, newComment]);
-      let merged!: Post;
       setPost((p) => {
-        merged = { ...p, comment_count: (p.comment_count ?? 0) + 1 };
-        return merged;
+        const next = { ...p, comment_count: (p.comment_count ?? 0) + 1 };
+        onPostChange?.(next);
+        return next;
       });
-      queueMicrotask(() => onPostChange?.(merged));
       setCommentText('');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to add comment');
@@ -167,12 +165,11 @@ export function PostDetail({
     try {
       await deleteComment(commentId, user.id);
       setComments(prev => prev.filter(c => c.id !== commentId));
-      let merged!: Post;
       setPost((p) => {
-        merged = { ...p, comment_count: Math.max(0, (p.comment_count ?? 0) - 1) };
-        return merged;
+        const next = { ...p, comment_count: Math.max(0, (p.comment_count ?? 0) - 1) };
+        onPostChange?.(next);
+        return next;
       });
-      queueMicrotask(() => onPostChange?.(merged));
     } catch {
       setError('Failed to delete comment');
     }

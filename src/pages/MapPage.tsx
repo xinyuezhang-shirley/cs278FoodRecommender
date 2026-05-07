@@ -18,7 +18,8 @@ import { MapPinExploreSheet } from '../components/map/MapPinExploreSheet';
 import { PostDetail } from '../components/posts/PostDetail';
 import { Modal } from '../components/ui/Modal';
 import { PageLoader } from '../components/ui/LoadingSpinner';
-import emptyNoPostFound from '../assets/nommi/empty_no_post_found.png';
+import { FailStateArt } from '../components/ui/LoadingSpinner';
+import { LogoPatternBackground } from '../components/ui/LogoPatternBackground';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useMapFilters } from '../hooks/useMapFilters';
 import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
@@ -36,6 +37,7 @@ export function MapPage() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<PlaceGroup | null>(null);
   const hasFlownRef = useRef(false);
+  const loadSeqRef = useRef(0);
 
   const { state: geoState, request: requestLocation, userLocation } = useGeolocation();
 
@@ -55,12 +57,14 @@ export function MapPage() {
   } = useMapFilters(allPosts, userLocation);
 
   const loadPosts = useCallback(async (silent?: boolean) => {
+    const reqSeq = ++loadSeqRef.current;
     if (!silent) setLoading(true);
     try {
       const posts = await getPaginatedPosts({}, user?.id);
+      if (reqSeq !== loadSeqRef.current) return;
       setAllPosts(posts.filter(p => p.latitude != null && p.longitude != null));
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && reqSeq === loadSeqRef.current) setLoading(false);
     }
   }, [user?.id]);
 
@@ -127,7 +131,8 @@ export function MapPage() {
   const freeFilterOn = filters.cuisine === 'free_food';
 
   return (
-    <div className="flex flex-col min-h-full bg-[#faf9f5] px-3 pb-24">
+    <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-3 pb-24">
+      <LogoPatternBackground />
 
       <div className="sticky top-0 z-[500] shrink-0 bg-[#faf9f5]/92 backdrop-blur-md pt-2 pb-2 space-y-2 border-b border-[#e5e7eb]/50">
         <MapSearchBar
@@ -205,11 +210,7 @@ export function MapPage() {
 
         {!loading && placeGroups.length === 0 && (
           <div className="absolute inset-0 z-[400] flex flex-col items-center justify-center bg-[#faf9f5]/93 backdrop-blur-[3px] px-6 text-center pointer-events-none">
-            <img
-              src={emptyNoPostFound}
-              alt="Nommi empty cup illustration — no food pins nearby yet"
-              className="w-36 sm:w-40 max-w-[10rem] h-auto object-contain mb-4 drop-shadow-[0_4px_12px_rgba(47,95,196,0.12)]"
-            />
+            <FailStateArt compact />
             <p className="text-base font-black text-[#2f5fc4] tracking-tight">No food here yet 👀</p>
             <p className="text-sm text-[#6b7280] mt-2 max-w-[240px] leading-relaxed">
               Be the first to drop something

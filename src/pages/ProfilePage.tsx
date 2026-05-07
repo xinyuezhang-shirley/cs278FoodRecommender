@@ -22,6 +22,7 @@ import { ProfileRelationshipButton } from '../components/profile/ProfileRelation
 import { PostDetail } from '../components/posts/PostDetail';
 import { Modal } from '../components/ui/Modal';
 import { PageLoader } from '../components/ui/LoadingSpinner';
+import { LogoPatternBackground } from '../components/ui/LogoPatternBackground';
 import emptyNoPostsYetSimple from '../assets/nommi/empty_no_posts_yet_simple.png';
 import { getPostIntentsForUser, togglePostIntent } from '../services/interactionService';
 import { ShareToCircleModal } from '../components/community/ShareToCircleModal';
@@ -106,6 +107,7 @@ export function ProfilePage() {
       setLoadingPosts(false);
       return;
     }
+    let cancelled = false;
     setLoadingPosts(true);
     (async () => {
       const viewerId = user?.id;
@@ -114,6 +116,7 @@ export function ProfilePage() {
         getUserFreeFoodCount(targetUserId),
         getUserCircleCount(targetUserId),
       ]);
+      if (cancelled) return;
       setPosts(p);
       setFreeFoodCount(ff);
       setCircleCount(cc);
@@ -123,6 +126,7 @@ export function ProfilePage() {
           getAllCircles(user.id),
           getPostIntentsForUser(user.id),
         ]);
+        if (cancelled) return;
         setCircles(allCircles);
         setSavedPostIds(new Set(intents.filter(i => i.intent_type === 'saved').map(i => i.post_id)));
         setSettingsForm({
@@ -134,13 +138,22 @@ export function ProfilePage() {
           currentPassword: '',
           show_friends_public: Boolean(profile?.show_friends_public),
         });
-        setEmailVerification(await getEmailVerificationStatus().catch(() => null));
+        const status = await getEmailVerificationStatus().catch(() => null);
+        if (cancelled) return;
+        setEmailVerification(status);
       } else {
+        if (cancelled) return;
         setCircles([]);
         setSavedPostIds(new Set());
       }
+      if (cancelled) return;
       setLoadingPosts(false);
-    })().catch(() => setLoadingPosts(false));
+    })().catch(() => {
+      if (!cancelled) setLoadingPosts(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [
     targetUserId,
     user?.id,
@@ -395,7 +408,8 @@ export function ProfilePage() {
   ];
 
   return (
-    <div className="flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
+    <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
+      <LogoPatternBackground />
       <div className="flex items-center justify-between pt-4 pb-3 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {!isOwnProfile && (

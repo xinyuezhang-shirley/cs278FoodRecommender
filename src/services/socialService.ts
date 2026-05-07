@@ -251,6 +251,7 @@ export async function sendFriendRequest(senderId: string, receiverId: string): P
 
 export async function respondToFriendRequest(requestId: string, accept: boolean): Promise<{ ok: boolean; error?: string }> {
   const localReq = readLocal<FriendRequest>(FRIEND_REQUESTS_KEY);
+  const localFriends = readLocal<Friendship>(FRIENDSHIPS_KEY);
   let target = localReq.find(r => r.id === requestId);
 
   if (!target) {
@@ -266,6 +267,7 @@ export async function respondToFriendRequest(requestId: string, accept: boolean)
 
   const nextStatus: FriendRequest['status'] = accept ? 'accepted' : 'declined';
   writeLocal(FRIEND_REQUESTS_KEY, localReq.map(r => (r.id === requestId ? { ...r, status: nextStatus } : r)));
+  let optimisticFriendshipId: string | null = null;
   if (accept) {
     const friendship: Friendship = {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : generateId(),
@@ -273,10 +275,16 @@ export async function respondToFriendRequest(requestId: string, accept: boolean)
       user_b_id: target.receiver_id,
       created_at: new Date().toISOString(),
     };
+    optimisticFriendshipId = friendship.id;
     writeLocal(FRIENDSHIPS_KEY, [friendship, ...readLocal<Friendship>(FRIENDSHIPS_KEY)]);
   }
 
   const { error } = await supabase.from('friend_requests').update({ status: nextStatus }).eq('id', requestId);
+  if (error) {
+    writeLocal(FRIEND_REQUESTS_KEY, localReq);
+    if (optimisticFriendshipId) writeLocal(FRIENDSHIPS_KEY, localFriends);
+    return { ok: false, error: error.message };
+  }
 
   if (accept) {
     const ins = await supabase.from('friendships').insert({
@@ -284,11 +292,12 @@ export async function respondToFriendRequest(requestId: string, accept: boolean)
       user_b_id: target.receiver_id,
     });
     if (ins.error && ins.error.code !== '23505' && ins.error.code !== '42P01') {
+      writeLocal(FRIEND_REQUESTS_KEY, localReq);
+      writeLocal(FRIENDSHIPS_KEY, localFriends);
       return { ok: false, error: ins.error.message };
     }
   }
 
-  if (error?.message && !accept) return { ok: false, error: error.message };
   return { ok: true };
 }
 
@@ -350,7 +359,7 @@ function threadsSyncEqual(sortedIds: string[], t: DirectMessageThread): boolean 
 export async function listThreadMessages(threadId: string): Promise<DirectMessage[]> {
   const { data, error } = await supabase
     .from('dm_messages')
-    .select('id, thread_id, sender_id, body, created_at')
+    .select('id, thread_id, sender_id, body, message_type, image_url, created_at')
     .eq('thread_id', threadId)
     .order('created_at', { ascending: true });
 
@@ -368,14 +377,79 @@ export async function sendThreadMessage(threadId: string, senderId: string, body
     thread_id: threadId,
     sender_id: senderId,
     body: text,
+    message_type: 'text',
     created_at: new Date().toISOString(),
   };
   writeLocal(DM_MESSAGES_KEY, [...readLocal<DirectMessage>(DM_MESSAGES_KEY), msg]);
-  await supabase.from('dm_messages').insert({
+  const { error } = await supabase.from('dm_messages').insert({
     thread_id: threadId,
     sender_id: senderId,
     body: text,
+    message_type: 'text',
   });
+  if (error) {
+    writeLocal(
+      DM_MESSAGES_KEY,
+      readLocal<DirectMessage>(DM_MESSAGES_KEY).filter((m) => m.id !== msg.id),
+    );
+    throw new Error(error.message);
+  }
+  await supabase
+    .from('dm_threads')
+    .update({ last_message_at: new Date().toISOString() })
+    .eq('id', threadId);
+}
+
+export async function sendThreadImage(
+  threadId: string,
+  senderId: string,
+  imageDataUrl: string,
+): Promise<void> {
+  if (!imageDataUrl.startsWith('data:image/')) {
+    throw new Error('Unsupported image format.');
+  }
+  const base64 = imageDataUrl.split(',')[1];
+  if (!base64) throw new Error('Invalid image data.');
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const path = `${senderId}/${threadId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('dm-images')
+    .upload(path, bytes, { contentType: 'image/jpeg', upsert: false });
+  if (uploadError) throw new Error(uploadError.message);
+
+  const { data: pub } = supabase.storage.from('dm-images').getPublicUrl(path);
+  const imageUrl = pub.publicUrl;
+  if (!imageUrl) throw new Error('Could not create image URL.');
+
+  const msg: DirectMessage = {
+    id: generateId(),
+    thread_id: threadId,
+    sender_id: senderId,
+    body: '',
+    message_type: 'image',
+    image_url: imageUrl,
+    created_at: new Date().toISOString(),
+  };
+  writeLocal(DM_MESSAGES_KEY, [...readLocal<DirectMessage>(DM_MESSAGES_KEY), msg]);
+  const { error: insertError } = await supabase.from('dm_messages').insert({
+    thread_id: threadId,
+    sender_id: senderId,
+    body: '',
+    message_type: 'image',
+    image_url: imageUrl,
+  });
+  if (insertError) {
+    writeLocal(
+      DM_MESSAGES_KEY,
+      readLocal<DirectMessage>(DM_MESSAGES_KEY).filter((m) => m.id !== msg.id),
+    );
+    throw new Error(insertError.message);
+  }
+  await supabase
+    .from('dm_threads')
+    .update({ last_message_at: new Date().toISOString() })
+    .eq('id', threadId);
 }
 
 export async function openOrCreateDirectThread(meId: string, otherUserId: string): Promise<DirectMessageThread> {

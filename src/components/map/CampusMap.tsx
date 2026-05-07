@@ -55,7 +55,7 @@ export function CampusMap({ posts, onPinClick }: CampusMapProps) {
   const [tooltip, setTooltip] = useState<string | null>(null);
 
   // Group posts by location — pick latest per unique location coord
-  const postsWithCoords = posts.filter(p => p.latitude && p.longitude);
+  const postsWithCoords = posts.filter(p => p.latitude != null && p.longitude != null);
 
   // Deduplicate pins that are very close together, showing count
   const pinGroups: Map<string, Post[]> = new Map();

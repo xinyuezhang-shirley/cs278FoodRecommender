@@ -11,6 +11,7 @@ import {
   Search as SearchIcon,
   RefreshCw,
   Undo2,
+  ImagePlus,
 } from 'lucide-react';
 import { Avatar } from '../ui/Avatar';
 import { timeAgo } from '../../utils/helpers';
@@ -25,8 +26,10 @@ import {
   listDmThreads,
   listThreadMessages,
   sendThreadMessage,
+  sendThreadImage,
   openOrCreateDirectThread,
 } from '../../services/socialService';
+import { compressImageFile } from '../../utils/imageCompress';
 import { supabase } from '../../lib/supabase';
 import {
   loadProfilesForIds,
@@ -68,6 +71,8 @@ export function FriendsAndMessagesPanel({
   const [activeThread, setActiveThread] = useState<DirectMessageThread | null>(null);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [composer, setComposer] = useState('');
+  const [sendingImage, setSendingImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatQuery, setNewChatQuery] = useState('');
@@ -233,9 +238,13 @@ export function FriendsAndMessagesPanel({
       setSuggestions([]);
       return;
     }
-    void searchProfilesByUsernamePrefix(debouncedFriendSearch).then(rows =>
-      setSuggestions(rows.filter(r => r.user_id !== userId)),
-    );
+    let cancelled = false;
+    void searchProfilesByUsernamePrefix(debouncedFriendSearch).then(rows => {
+      if (!cancelled) setSuggestions(rows.filter(r => r.user_id !== userId));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [debouncedFriendSearch, userId]);
 
   const incoming = friendRequests.filter(r => normalizeRequestStatus(r.status) === 'pending' && r.receiver_id === userId);
@@ -350,6 +359,23 @@ export function FriendsAndMessagesPanel({
     await refresh();
   }
 
+  async function handleSendImageFile(file: File) {
+    if (!activeThread) return;
+    setSendingImage(true);
+    try {
+      const compressed = await compressImageFile(file, 1280, 0.84);
+      await sendThreadImage(activeThread.id, userId, compressed);
+      const next = await listThreadMessages(activeThread.id);
+      setMessages(next);
+      await refresh();
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not send image');
+      window.setTimeout(() => setToast(null), 2600);
+    } finally {
+      setSendingImage(false);
+    }
+  }
+
   /** Human-readable DM title excluding current user. */
   function threadTitle(t: DirectMessageThread) {
     const others = t.participant_ids.filter(p => p !== userId).map(displayFor);
@@ -424,7 +450,18 @@ export function FriendsAndMessagesPanel({
                     {!mine && (
                       <p className="text-[10px] font-bold text-[#6f90d8] mb-0.5">{displayFor(m.sender_id)}</p>
                     )}
-                    {m.body}
+                    {m.message_type === 'image' && m.image_url ? (
+                      <a href={m.image_url} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={m.image_url}
+                          alt="Shared in chat"
+                          className="mt-1 max-h-56 w-auto max-w-full rounded-xl border border-black/10"
+                          loading="lazy"
+                        />
+                      </a>
+                    ) : (
+                      m.body
+                    )}
                     <p className={`mt-1 text-[10px] ${mine ? 'text-white/75' : 'text-[#9ca3af]'}`}>
                       {timeAgo(m.created_at)}
                     </p>
@@ -440,6 +477,28 @@ export function FriendsAndMessagesPanel({
           </div>
           <div className="p-3 border-t border-[#f3f4f6] flex gap-2 bg-white rounded-b-[24px]">
             <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (!file) return;
+                void handleSendImageFile(file);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={sendingImage}
+              className="w-11 h-11 rounded-full border border-[#e5e7eb] text-[#2f5fc4] flex items-center justify-center shrink-0 disabled:opacity-40"
+              aria-label="Send image"
+              title="Send image"
+            >
+              {sendingImage ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <ImagePlus className="w-4 h-4" aria-hidden />}
+            </button>
+            <input
               value={composer}
               onChange={e => setComposer(e.target.value)}
               placeholder="Message…"
@@ -449,7 +508,7 @@ export function FriendsAndMessagesPanel({
             <button
               type="button"
               onClick={() => void handleSendComposer()}
-              disabled={!composer.trim()}
+              disabled={!composer.trim() || sendingImage}
               className="w-11 h-11 rounded-full bg-[#2f5fc4] text-white flex items-center justify-center shrink-0 disabled:opacity-40"
               aria-label="Send message"
             >

@@ -136,18 +136,23 @@ export function LocationPicker({ locationName, onSelect }: Props) {
       return;
     }
     setResolvingPlaceId(item.placeId);
-    const det = await fetchPlaceLatLng(item.placeId);
-    setResolvingPlaceId(null);
-    if (det) {
-      finalize({
-        name: det.displayName,
-        lat: det.lat,
-        lng: det.lng,
-        place_website_url: det.placeWebsiteUrl,
-        google_maps_url: det.googleMapsUrl,
-      });
-    } else {
+    try {
+      const det = await fetchPlaceLatLng(item.placeId);
+      if (det) {
+        finalize({
+          name: det.displayName,
+          lat: det.lat,
+          lng: det.lng,
+          place_website_url: det.placeWebsiteUrl,
+          google_maps_url: det.googleMapsUrl,
+        });
+      } else {
+        finalize({ name: item.secondary ? `${item.displayName}, ${item.secondary}` : item.displayName });
+      }
+    } catch {
       finalize({ name: item.secondary ? `${item.displayName}, ${item.secondary}` : item.displayName });
+    } finally {
+      setResolvingPlaceId(null);
     }
   }
 

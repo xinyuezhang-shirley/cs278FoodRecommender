@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, X, Bookmark, Heart } from 'lucide-react';
 import type { Post, ReactionType } from '../types';
@@ -33,6 +33,7 @@ export function FeedPage() {
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+  const loadSeqRef = useRef(0);
 
   const { request: requestLocation, userLocation } = useGeolocation();
 
@@ -45,23 +46,27 @@ export function FeedPage() {
   } = useMapFilters(allPosts, userLocation);
 
   const loadPosts = useCallback(async (silent?: boolean) => {
+    const reqSeq = ++loadSeqRef.current;
     if (!silent) {
       setLoading(true);
       setError(null);
     }
     try {
       const posts = await getPaginatedPosts({}, user?.id);
+      if (reqSeq !== loadSeqRef.current) return;
       setAllPosts(posts);
       if (user?.id) {
         const intents = await getPostIntentsForUser(user.id);
+        if (reqSeq !== loadSeqRef.current) return;
         setSavedPostIds(new Set(intents.filter(i => i.intent_type === 'saved').map(i => i.post_id)));
       } else {
+        if (reqSeq !== loadSeqRef.current) return;
         setSavedPostIds(new Set());
       }
     } catch {
-      if (!silent) setError('Failed to load posts. Please try again.');
+      if (!silent && reqSeq === loadSeqRef.current) setError('Failed to load posts. Please try again.');
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && reqSeq === loadSeqRef.current) setLoading(false);
     }
   }, [user?.id]);
   async function handleLikeFromFeed(post: Post) {
