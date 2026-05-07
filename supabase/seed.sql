@@ -5,10 +5,10 @@
 -- Creates THREE demo Auth users + profiles (+ identities for email/password),
 -- then memberships, posts, comments, reactions.
 --
--- Demo logins (same password):
---   alice@nommi.stanford.demo       → profile username: alice_tree
---   bob@nommi.stanford.demo         → bob_boba
---   carmen@nommi.stanford.demo      → carmen_bites
+-- Primary CS278 demo (@nommi278) plus two extras (same password for all three):
+--   nommi278@nommi.stanford.demo   → profile username: nommi278
+--   bob@nommi.stanford.demo        → bob_boba
+--   carmen@nommi.stanford.demo     → carmen_bites
 --   Password: NommiDemo1!
 --
 -- Re-run safely: skips users/emails already present; upserts circles & posts data.
@@ -48,18 +48,18 @@ ON CONFLICT (id) DO UPDATE SET
 
 DO $nommi$
 DECLARE
-  v_pw text := crypt('NommiDemo1!', gen_salt('bf'));
+  v_pw text := extensions.crypt('NommiDemo1!', extensions.gen_salt('bf'));
 
   -- Stable demo user IDs (FK targets for memberships / posts). Do not change after first run unless you truncate auth.
   u_a uuid := 'eaf10001-a000-4a00-ba00-feed00001001'::uuid;
   u_b uuid := 'eaf10002-a000-4a00-ba00-feed00002002'::uuid;
   u_c uuid := 'eaf10003-a000-4a00-ba00-feed00003003'::uuid;
 
-  em_a text := 'alice@nommi.stanford.demo';
+  em_a text := 'nommi278@nommi.stanford.demo';
   em_b text := 'bob@nommi.stanford.demo';
   em_c text := 'carmen@nommi.stanford.demo';
 
-  un_a text := 'alice_tree';
+  un_a text := 'nommi278';
   un_b text := 'bob_boba';
   un_c text := 'carmen_bites';
 BEGIN
@@ -77,6 +77,10 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change,
       raw_app_meta_data,
       raw_user_meta_data,
       created_at,
@@ -90,6 +94,10 @@ BEGIN
       em_a,
       v_pw,
       now(),
+      '',
+      '',
+      '',
+      '',
       '{"provider":"email","providers":["email"]}'::jsonb,
       jsonb_build_object('username', un_a),
       now(),
@@ -119,7 +127,7 @@ BEGIN
         'username', un_a
       ),
       'email',
-      u_a::text,
+      em_a,
       now(),
       now(),
       now()
@@ -145,6 +153,10 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change,
       raw_app_meta_data,
       raw_user_meta_data,
       created_at,
@@ -158,6 +170,10 @@ BEGIN
       em_b,
       v_pw,
       now(),
+      '',
+      '',
+      '',
+      '',
       '{"provider":"email","providers":["email"]}'::jsonb,
       jsonb_build_object('username', un_b),
       now(),
@@ -187,7 +203,7 @@ BEGIN
         'username', un_b
       ),
       'email',
-      u_b::text,
+      em_b,
       now(),
       now(),
       now()
@@ -213,6 +229,10 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
+      confirmation_token,
+      recovery_token,
+      email_change_token_new,
+      email_change,
       raw_app_meta_data,
       raw_user_meta_data,
       created_at,
@@ -226,6 +246,10 @@ BEGIN
       em_c,
       v_pw,
       now(),
+      '',
+      '',
+      '',
+      '',
       '{"provider":"email","providers":["email"]}'::jsonb,
       jsonb_build_object('username', un_c),
       now(),
@@ -255,7 +279,7 @@ BEGIN
         'username', un_c
       ),
       'email',
-      u_c::text,
+      em_c,
       now(),
       now(),
       now()
@@ -267,9 +291,39 @@ BEGIN
     VALUES (u_c, un_c);
   END IF;
 
+  -- GoTrue: token cols must not be NULL; email identities expect provider_id = email (supabase/auth#1940).
+  UPDATE auth.users SET
+    confirmation_token     = '',
+    recovery_token          = '',
+    email_change_token_new  = '',
+    email_change           = '',
+    encrypted_password      = v_pw,
+    email = CASE id WHEN u_a THEN em_a WHEN u_b THEN em_b WHEN u_c THEN em_c END,
+    raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object(
+      'username',
+      CASE id WHEN u_a THEN un_a WHEN u_b THEN un_b WHEN u_c THEN un_c END
+    )
+  WHERE id IN (u_a, u_b, u_c);
+
+  UPDATE auth.identities i SET
+      provider_id   = u.email,
+      identity_data = COALESCE(i.identity_data, '{}'::jsonb) || jsonb_build_object(
+        'sub', u.id::text,
+        'email', u.email,
+        'username',
+          CASE u.id WHEN u_a THEN un_a WHEN u_b THEN un_b WHEN u_c THEN un_c END,
+        'email_verified', true,
+        'phone_verified', false
+      )
+    FROM auth.users u
+    WHERE i.user_id = u.id AND i.provider = 'email' AND u.id IN (u_a, u_b, u_c);
+
+  UPDATE public.profiles SET username = CASE id WHEN u_a THEN un_a WHEN u_b THEN un_b WHEN u_c THEN un_c END
+    WHERE id IN (u_a, u_b, u_c);
+
   -- Richer profile bios (runs every time — safe UPDATE)
-  UPDATE public.profiles SET avatar_url = 'https://api.dicebear.com/7.x/notionists/svg?seed=stomachstanford',
-    bio              = 'Hunting the best dumplings west of Salvatierra.',
+  UPDATE public.profiles SET avatar_url = 'https://api.dicebear.com/7.x/notionists/svg?seed=nommi278',
+    bio              = 'CS278 demo account — grazing campus & PA for the best bites.',
     food_personality = 'Campus Grazing Goat 🐐'
   WHERE id = u_a;
 
@@ -429,6 +483,6 @@ BEGIN
     ('f00d0110-feed-400d-a00d-000001000110'::uuid, u_a, 'still_there')
   ON CONFLICT (post_id, user_id) DO UPDATE SET type = excluded.type;
 
-  RAISE NOTICE '[nommi seed] Demo accounts: alice|bob|carmen @nommi.stanford.demo | password NommiDemo1!';
+  RAISE NOTICE '[nommi seed] Demo accounts: nommi278@nommi.stanford.demo (+ bob|carmen) | password NommiDemo1!';
 END
 $nommi$;

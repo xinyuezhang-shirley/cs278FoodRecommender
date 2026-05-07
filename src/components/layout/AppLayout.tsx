@@ -24,7 +24,7 @@ export function AppLayout() {
 
   return (
     <div
-      className="bg-[#faf9f5] max-w-lg mx-auto w-full flex flex-col"
+      className="bg-[#faf9f5] max-w-lg mx-auto w-full flex flex-col overflow-x-hidden overflow-y-visible"
       style={{ height: '100dvh' }}
     >
       <main className="flex-1 min-h-0 overflow-y-auto">

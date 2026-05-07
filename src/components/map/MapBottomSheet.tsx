@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Clock, ChevronRight, X } from 'lucide-react';
 import type { Post } from '../../types';
-import type { PinGroup } from './MapView';
+import type { PinGroup } from '../../utils/groupPostsByLocation';
 import { timeAgo, timeRemaining, isExpired } from '../../utils/helpers';
 import { PostTypeBadge, Tag } from '../ui/Tag';
 import { Modal } from '../ui/Modal';

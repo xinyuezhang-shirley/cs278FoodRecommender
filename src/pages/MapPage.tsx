@@ -3,7 +3,8 @@ import type { Post } from '../types';
 import { getPaginatedPosts } from '../services/postService';
 import { useAuth } from '../context/AuthContext';
 import { isExpired } from '../utils/helpers';
-import { MapView, groupPostsByLocation, type PlaceGroup } from '../components/map/MapView';
+import { MapView } from '../components/map/MapView';
+import { groupPostsByLocation, type PlaceGroup } from '../utils/groupPostsByLocation';
 import { MapSearchBar } from '../components/map/MapSearchBar';
 import { CuisineChipRow } from '../components/map/CuisineChipRow';
 import { DietaryFilterDropdown } from '../components/map/DietaryFilterDropdown';
@@ -11,6 +12,7 @@ import { DistanceFilterDropdown } from '../components/map/DistanceFilterDropdown
 import { OpenNowDropdown } from '../components/map/OpenNowDropdown';
 import { RatingDropdown } from '../components/map/RatingDropdown';
 import { SortByDropdown } from '../components/map/SortByDropdown';
+import { QuickPostFilterToggles } from '../components/map/QuickPostFilterToggles';
 import { LocateMeButton } from '../components/map/LocateMeButton';
 import { MapPinExploreSheet } from '../components/map/MapPinExploreSheet';
 import { PostDetail } from '../components/posts/PostDetail';
@@ -19,6 +21,7 @@ import { PageLoader } from '../components/ui/LoadingSpinner';
 import emptyNoPostFound from '../assets/nommi/empty_no_post_found.png';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useMapFilters } from '../hooks/useMapFilters';
+import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
 
 const DEFAULT_CENTER: [number, number] = [37.4290, -122.1685];
 const DEFAULT_ZOOM = 14;
@@ -46,22 +49,38 @@ export function MapPage() {
   const {
     filters,
     setSearch, setCuisine, setDietary, setDistance,
-    setOpenNow, setRating, setSortBy,
+    setOpenNow, setRating, setSortBy, setPhotosOnly, setCampusOnly,
     filteredPosts,
     activeFilterCount,
   } = useMapFilters(allPosts, userLocation);
 
-  const loadPosts = useCallback(async () => {
-    setLoading(true);
+  const loadPosts = useCallback(async (silent?: boolean) => {
+    if (!silent) setLoading(true);
     try {
       const posts = await getPaginatedPosts({}, user?.id);
       setAllPosts(posts.filter(p => p.latitude != null && p.longitude != null));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [user?.id]);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
+
+  const mapRealtimeSpecs = useMemo(
+    () => [
+      { table: 'posts' },
+      { table: 'reactions' },
+      { table: 'comments' },
+      ...(user?.id ? [{ table: 'post_intents' as const, filter: `user_id=eq.${user.id}` }] : []),
+    ],
+    [user?.id],
+  );
+
+  useDebouncedRealtime({
+    channelName: 'map-realtime-global',
+    specs: mapRealtimeSpecs,
+    onEvent: () => void loadPosts(true),
+  });
 
   const placeGroups = useMemo(() => groupPostsByLocation(filteredPosts), [filteredPosts]);
   const freeActiveCount = allPosts.filter(p => p.is_free_food && !isExpired(p.expires_at)).length;
@@ -116,6 +135,12 @@ export function MapPage() {
           onChange={v => { setSearch(v); setSelectedPlace(null); }}
         />
         <CuisineChipRow active={filters.cuisine} onChange={handleCuisineChange} />
+        <QuickPostFilterToggles
+          photosOnly={filters.photosOnly}
+          campusOnly={filters.campusOnly}
+          onPhotosOnly={v => { setPhotosOnly(v); setSelectedPlace(null); }}
+          onCampusOnly={v => { setCampusOnly(v); setSelectedPlace(null); }}
+        />
         <div className="flex gap-1.5 flex-wrap items-center">
           <DietaryFilterDropdown selected={filters.dietary} onChange={setDietary} />
           <DistanceFilterDropdown

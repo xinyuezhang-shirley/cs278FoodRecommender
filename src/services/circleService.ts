@@ -8,6 +8,7 @@ import type {
 import { supabase } from '../lib/supabase';
 import { profileLiteFromRow } from './profileHelpers';
 import { enrichPosts } from './postService';
+import { SEED_CIRCLES, SEED_MEMBERSHIPS, SEED_POSTS, SEED_PROFILES } from './mockData';
 
 function enrichCircle(
   circle: FoodCircle,
@@ -57,12 +58,52 @@ async function loadMembershipBuckets(): Promise<Map<string, { circle_id: string;
 }
 
 export async function getAllCircles(currentUserId?: string): Promise<FoodCircle[]> {
-  const { data: rows, error } = await supabase.from('food_circles').select('*').order('name');
+  try {
+    const { data: rows, error } = await supabase.from('food_circles').select('*').order('name');
+    if (error) throw new Error(error.message);
+    if (!rows?.length) {
+      const fallbackBuckets = new Map<string, { circle_id: string; user_id: string }[]>();
+      for (const m of SEED_MEMBERSHIPS) {
+        const list = fallbackBuckets.get(m.circle_id) ?? [];
+        list.push(m);
+        fallbackBuckets.set(m.circle_id, list);
+      }
+      return SEED_CIRCLES.map(c => enrichCircle(c, fallbackBuckets, currentUserId));
+    }
+    const buckets = await loadMembershipBuckets();
+    const circles = (rows ?? []).map(r => mapCircleRow(r as Record<string, unknown>));
+    return circles.map(c => enrichCircle(c, buckets, currentUserId));
+  } catch {
+    const fallbackBuckets = new Map<string, { circle_id: string; user_id: string }[]>();
+    for (const m of SEED_MEMBERSHIPS) {
+      const list = fallbackBuckets.get(m.circle_id) ?? [];
+      list.push(m);
+      fallbackBuckets.set(m.circle_id, list);
+    }
+    return SEED_CIRCLES.map(c => enrichCircle(c, fallbackBuckets, currentUserId));
+  }
+}
 
-  if (error) throw new Error(error.message);
-  const buckets = await loadMembershipBuckets();
-  const circles = (rows ?? []).map(r => mapCircleRow(r as Record<string, unknown>));
-  return circles.map(c => enrichCircle(c, buckets, currentUserId));
+/** Public profiles for users in this circle (`circle_memberships` is readable app-wide per RLS). */
+export async function getCircleMembers(circleId: string): Promise<UserProfile[]> {
+  const { data: memRows, error: mErr } = await supabase
+    .from('circle_memberships')
+    .select('user_id, joined_at')
+    .eq('circle_id', circleId)
+    .order('joined_at', { ascending: true });
+
+  if (mErr) throw new Error(mErr.message);
+  const orderedUserIds = [...new Set((memRows ?? []).map(m => m.user_id as string))];
+  if (orderedUserIds.length === 0) return [];
+
+  const { data: profs, error: pErr } = await supabase
+    .from('profiles')
+    .select('id, username, avatar_url, bio, food_personality, created_at')
+    .in('id', orderedUserIds);
+
+  if (pErr) throw new Error(pErr.message);
+  const profMap = new Map((profs ?? []).map(p => [p.id, profileLiteFromRow(p)]));
+  return orderedUserIds.map(id => profMap.get(id)).filter((p): p is UserProfile => p != null);
 }
 
 export async function getCircleById(id: string, currentUserId?: string): Promise<FoodCircle | null> {
@@ -79,26 +120,21 @@ export async function createCircle(input: CreateCircleInput, creatorUserId: stri
   if (!name) throw new Error('Circle name is required');
 
   const tags = (input.tags ?? []).map(t => t.trim().toLowerCase()).filter(Boolean);
-  const row: Record<string, unknown> = {
+  const base: Record<string, unknown> = {
     name: name.slice(0, 120),
     description: (input.description ?? '').trim().slice(0, 500) || '',
     icon_type: input.icon_type?.trim() || '🍴',
   };
   /** omit tags if migration not deployed — try both */
-  row.tags = tags;
-
-  let data: Record<string, unknown> | null = null;
-
-  let ins = await supabase.from('food_circles').insert(row).select('*').single();
+  let ins = await supabase.from('food_circles').insert({ ...base, tags }).select('*').single();
 
   if (ins.error?.message?.toLowerCase().includes('tags') || ins.error?.code === '42703') {
-    const { tags: _t, ...rest } = row;
-    ins = await supabase.from('food_circles').insert(rest).select('*').single();
+    ins = await supabase.from('food_circles').insert(base).select('*').single();
   }
 
   if (ins.error) throw new Error(ins.error.message);
-  data = ins.data as Record<string, unknown> | null;
 
+  const data = ins.data as Record<string, unknown> | null;
   if (!data) throw new Error('Could not create circle');
 
   await joinCircle(data.id as string, creatorUserId);
@@ -163,8 +199,13 @@ export async function getCirclePosts(circleId: string, currentUserId?: string): 
     .eq('circle_id', circleId)
     .order('created_at', { ascending: false });
 
-  if (error) throw new Error(error.message);
-  if (!links?.length) return [];
+  if (error || !links?.length) {
+    const fallbackProfileMap = new Map(SEED_PROFILES.map(p => [p.id, p]));
+    return SEED_POSTS
+      .filter(p => p.circle_id === circleId)
+      .map(p => ({ ...p, author: fallbackProfileMap.get(p.author_id) }))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
 
   const { data: circleRow } = await supabase
     .from('food_circles')
@@ -272,6 +313,7 @@ export async function getActivityInJoinedCircles(
   currentUserId?: string,
   limit = 30,
 ): Promise<CircleActivityItem[]> {
+  try {
   const { data: mems, error: mErr } = await supabase
     .from('circle_memberships')
     .select('circle_id')
@@ -335,6 +377,25 @@ export async function getActivityInJoinedCircles(
     });
   }
   return items;
+  } catch {
+    const fallbackMemberships = SEED_MEMBERSHIPS.filter(m => m.user_id === userId).map(m => m.circle_id);
+    if (fallbackMemberships.length === 0) return [];
+    const profileMap = new Map(SEED_PROFILES.map(p => [p.id, p]));
+    return SEED_POSTS
+      .filter(p => p.circle_id && fallbackMemberships.includes(p.circle_id))
+      .slice(0, limit)
+      .map((p) => ({
+        share_id: `fallback-${p.id}`,
+        shared_at: p.created_at,
+        circle: {
+          id: p.circle_id!,
+          name: SEED_CIRCLES.find(c => c.id === p.circle_id)?.name ?? 'Circle',
+        },
+        sharer: profileMap.get(p.author_id)!,
+        post: { ...p, author: profileMap.get(p.author_id) },
+        note: null,
+      }));
+  }
 }
 
 /** Original post authors weighted by appearances in circles the user belongs to. */

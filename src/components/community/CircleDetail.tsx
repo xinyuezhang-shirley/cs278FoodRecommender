@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ChevronLeft, Users } from 'lucide-react';
-import type { FoodCircle, Post } from '../../types';
-import { getCirclePosts, joinCircle, leaveCircle } from '../../services/circleService';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { ChevronLeft, Loader2, Users } from 'lucide-react';
+import type { FoodCircle, Post, UserProfile } from '../../types';
+import { getCircleMembers, getCirclePosts, joinCircle, leaveCircle } from '../../services/circleService';
 import { useAuth } from '../../context/AuthContext';
 import { PostGrid } from '../posts/PostGrid';
 import { Modal } from '../ui/Modal';
@@ -9,6 +10,7 @@ import { PostDetail } from '../posts/PostDetail';
 import { ShareToCircleModal } from './ShareToCircleModal';
 import emptyNoPostsYetSimple from '../../assets/nommi/empty_no_posts_yet_simple.png';
 import emptyNoPostFound from '../../assets/nommi/empty_no_post_found.png';
+import { useDebouncedRealtime } from '../../hooks/useDebouncedRealtime';
 
 interface CircleDetailProps {
   circle: FoodCircle;
@@ -30,6 +32,8 @@ export function CircleDetail({
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
   const [joining, setJoining] = useState(false);
+  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
@@ -45,6 +49,34 @@ export function CircleDetail({
     loadPosts();
   }, [loadPosts]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setMembersLoading(true);
+    void getCircleMembers(circle.id)
+      .then((rows) => { if (!cancelled) setMembers(rows); })
+      .catch(() => { if (!cancelled) setMembers([]); })
+      .finally(() => { if (!cancelled) setMembersLoading(false); });
+    return () => { cancelled = true; };
+  }, [circle.id]);
+
+  const circleDetailSpecs = useMemo(
+    () => [
+      { table: 'circle_posts', filter: `circle_id=eq.${circle.id}` },
+      { table: 'circle_memberships', filter: `circle_id=eq.${circle.id}` },
+    ],
+    [circle.id],
+  );
+
+  useDebouncedRealtime({
+    channelName: `circle-detail-${circle.id}`,
+    specs: circleDetailSpecs,
+    debounceMs: 420,
+    onEvent: () => {
+      void loadPosts();
+      void getCircleMembers(circle.id).then(setMembers).catch(() => setMembers([]));
+    },
+  });
+
   async function handleToggleMembership() {
     if (!user) return;
     setJoining(true);
@@ -57,6 +89,7 @@ export function CircleDetail({
       }
       onCircleUpdate(updated);
       await loadPosts();
+      void getCircleMembers(circle.id).then(setMembers).catch(() => {});
     } catch {
       //
     } finally {
@@ -123,6 +156,42 @@ export function CircleDetail({
                 ))}
               </div>
             )}
+
+            <div className="mt-4 pt-3 border-t border-[#f0f4ff]">
+              <p className="text-[10px] font-black text-[#6f90d8] uppercase tracking-widest mb-2">Members</p>
+              {membersLoading ? (
+                <div className="flex items-center gap-2 text-xs text-[#6b7280] font-semibold">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#2f5fc4]" aria-hidden />
+                  Loading…
+                </div>
+              ) : members.length === 0 ? (
+                <p className="text-xs text-[#9ca3af] font-medium">No members yet.</p>
+              ) : (
+                <ul className="flex flex-wrap gap-2">
+                  {members.map(m => (
+                    <li key={m.id}>
+                      <Link
+                        to={`/app/profile/${m.id}`}
+                        className="inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-full border border-[#e5e7eb] bg-[#fafbff] px-2.5 py-1 text-xs font-semibold text-[#1a1a1a] hover:border-[#2f5fc4]/40 hover:bg-white transition-colors"
+                      >
+                        {m.avatar_url ? (
+                          <img
+                            src={m.avatar_url}
+                            alt=""
+                            className="w-5 h-5 rounded-full object-cover shrink-0 border border-[#e5e7eb]"
+                          />
+                        ) : (
+                          <span className="w-5 h-5 rounded-full bg-[#eaf1ff] border border-[#e5e7eb] shrink-0 text-[10px] font-black text-[#2f5fc4] flex items-center justify-center">
+                            {m.username.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                        <span className="truncate max-w-[9rem]">@{m.username}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
 
           {user && !circle.is_member && (

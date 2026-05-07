@@ -2,6 +2,7 @@ import type { Comment, UserProfile } from '../types';
 import { supabase } from '../lib/supabase';
 import { profileLiteFromRow } from './profileHelpers';
 import { sanitizeText } from '../utils/sanitize';
+import { SEED_COMMENTS, SEED_PROFILES } from './mockData';
 
 function mapCommentRow(row: Record<string, unknown>, author?: UserProfile): Comment {
   return {
@@ -21,8 +22,12 @@ export async function getCommentsForPost(postId: string): Promise<Comment[]> {
     .eq('post_id', postId)
     .order('created_at', { ascending: true });
 
-  if (error) throw new Error(error.message);
-  if (!rows?.length) return [];
+  if (error || !rows?.length) {
+    const profMap = new Map(SEED_PROFILES.map(p => [p.id, p]));
+    return SEED_COMMENTS
+      .filter(c => c.post_id === postId)
+      .map(c => ({ ...c, author: profMap.get(c.author_id) }));
+  }
 
   const authorIds = [...new Set(rows.map(r => r.author_id as string))];
   const { data: profiles, error: pErr } = await supabase

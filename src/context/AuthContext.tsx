@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, {
+  createContext, useContext, useEffect, useState, useCallback, useMemo, useRef,
+} from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { AuthUser, UserProfile } from '../types';
 import {
@@ -27,13 +29,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const initialBootstrapDone = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function hydrateFromSession(session: Session | null) {
+      const showSplash = !initialBootstrapDone.current;
       try {
-        setLoading(true);
+        if (showSplash) setLoading(true);
         const snap = await getAuthSnapshotFromSession(session);
         if (cancelled) return;
         if (snap) {
@@ -49,9 +53,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setProfile(null);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          if (showSplash) {
+            initialBootstrapDone.current = true;
+            setLoading(false);
+          }
+        }
       }
     }
+
+    /** Restore session immediately (fixes flash + missed INITIAL_SESSION races). */
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled) void hydrateFromSession(data.session ?? null);
+    });
 
     const {
       data: { subscription },
@@ -66,15 +80,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleSignIn = useCallback(async (data: SignInData) => {
-    await signIn(data);
+    const snap = await signIn(data);
+    setUser(snap.user);
+    setProfile(snap.profile);
+    setLoading(false);
   }, []);
 
   const handleSignUp = useCallback(async (data: SignUpData) => {
-    await signUp(data);
+    const snap = await signUp(data);
+    setUser(snap.user);
+    setProfile(snap.profile);
+    setLoading(false);
   }, []);
 
   const handleSignOut = useCallback(async () => {
     await signOut();
+    setUser(null);
+    setProfile(null);
+    setLoading(false);
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -93,8 +116,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  return (
-    <AuthContext.Provider value={{
+  const value = useMemo(
+    () => ({
       user,
       profile,
       loading,
@@ -102,12 +125,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signUp: handleSignUp,
       signOut: handleSignOut,
       refreshProfile,
-    }}>
+    }),
+    [user, profile, loading, handleSignIn, handleSignUp, handleSignOut, refreshProfile],
+  );
+
+  return (
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- hook paired with Provider
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');

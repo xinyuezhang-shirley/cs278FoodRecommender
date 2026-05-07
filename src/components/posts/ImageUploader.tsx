@@ -23,20 +23,41 @@ export function ImageUploader({ value, onChange }: Props) {
     e.target.value = '';
   }
 
+  function isVideoUrl(url: string): boolean {
+    return /\.(mp4|webm|ogg)(\?.*)?$/i.test(url) || url.includes('youtube.com') || url.includes('youtu.be');
+  }
+
+  function isSafeMediaUrl(url: string): boolean {
+    return /^https?:\/\//i.test(url) || /^data:image\//i.test(url);
+  }
+
   function applyUrl() {
     const u = urlDraft.trim();
-    if (u) { onChange(u); setShowUrl(false); setUrlDraft(''); }
+    if (!u) return;
+    if (!isSafeMediaUrl(u)) return;
+    onChange(u);
+    setShowUrl(false);
+    setUrlDraft('');
   }
 
   if (value) {
     return (
       <div className="relative">
-        <img
-          src={value}
-          alt=""
-          className="w-full object-cover bg-[#f3f4f6]"
-          style={{ maxHeight: '380px', borderRadius: '0' }}
-        />
+        {isVideoUrl(value) ? (
+          <video
+            src={value}
+            controls
+            className="w-full object-cover bg-[#f3f4f6]"
+            style={{ maxHeight: '380px', borderRadius: '0' }}
+          />
+        ) : (
+          <img
+            src={value}
+            alt=""
+            className="w-full object-cover bg-[#f3f4f6]"
+            style={{ maxHeight: '380px', borderRadius: '0' }}
+          />
+        )}
         <div
           className="absolute inset-x-0 top-0 h-16 pointer-events-none"
           style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, transparent 100%)' }}
@@ -80,7 +101,7 @@ export function ImageUploader({ value, onChange }: Props) {
         </div>
         <div className="text-center">
           <p className="text-sm font-medium text-[#64748b]">Add a photo</p>
-          <p className="text-xs text-[#94a3b8] mt-0.5">optional</p>
+          <p className="text-xs text-[#94a3b8] mt-0.5">optional image or video URL</p>
         </div>
       </button>
 
@@ -91,7 +112,7 @@ export function ImageUploader({ value, onChange }: Props) {
           className="flex items-center gap-1.5 text-xs text-[#94a3b8] w-full justify-center py-0.5"
         >
           <Link2 className="w-3 h-3" />
-          or paste an image URL
+          or paste media URL
         </button>
       ) : (
         <div className="flex gap-2 items-center">

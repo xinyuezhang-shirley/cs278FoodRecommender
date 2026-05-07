@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Clock, MapPin, X } from 'lucide-react';
 import type { Post } from '../../types';
-import type { PlaceGroup } from './MapView';
+import type { PlaceGroup } from '../../utils/groupPostsByLocation';
 import { timeRemaining, isExpired } from '../../utils/helpers';
 import { PostTypeBadge } from '../ui/Tag';
 import { BottomSheet } from '../ui/Modal';

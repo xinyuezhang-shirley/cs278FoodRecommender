@@ -31,6 +31,71 @@ export function isExpired(dateStr?: string): boolean {
   return isPast(new Date(dateStr));
 }
 
+/** Compare Supabase `auth.users` / `profiles.id` with `posts.author_id` (UUID string quirks). */
+export function authIdsMatch(a?: string | null, b?: string | null): boolean {
+  const x = (a ?? '').trim().toLowerCase();
+  const y = (b ?? '').trim().toLowerCase();
+  return x.length > 0 && x === y;
+}
+
+/** True if the signed-in user wrote this post (checks both session id and profile id). */
+export function isPostOwner(
+  viewerUserId?: string | null,
+  viewerProfileId?: string | null,
+  postAuthorId?: string | null,
+  postAuthorNestedId?: string | null,
+): boolean {
+  const aid = postAuthorId ?? postAuthorNestedId;
+  if (!aid) return false;
+  return authIdsMatch(viewerUserId, aid) || authIdsMatch(viewerProfileId, aid);
+}
+
+function safeReturnPath(raw: string | null): string | null {
+  if (!raw?.trim()) return null;
+  try {
+    const decoded = decodeURIComponent(raw.trim());
+    if (decoded.startsWith('/app') && !decoded.includes('://')) return decoded;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve where “back” should go: React Router location.state.from, then ?return=
+ * (needed when the post opens in a new tab — state does not carry over).
+ */
+export function resolveAppReturnTarget(
+  state: unknown,
+  searchParams: URLSearchParams | null | undefined,
+  fallback: string,
+): string {
+  const fromState = typeof (state as { from?: unknown } | null)?.from === 'string'
+    ? (state as { from: string }).from
+    : null;
+  if (fromState?.startsWith('/app')) return fromState;
+  const fromQuery = searchParams ? safeReturnPath(searchParams.get('return')) : null;
+  if (fromQuery) return fromQuery;
+  return fallback;
+}
+
+/** Open the post viewer in a new browser tab with a safe `/app`-only return path. */
+export function openAppPostInNewTab(postId: string, returnPathInsideApp: string): void {
+  const origin = window.location.origin;
+  const suffix = returnPathInsideApp.startsWith('/app')
+    ? returnPathInsideApp
+    : '/app/collections/saved';
+  const ret = encodeURIComponent(suffix);
+  window.open(`${origin}/app/post/${postId}?return=${ret}`, '_blank', 'noopener,noreferrer');
+}
+
+export function encodeReturnQuery(returnPathInsideApp: string): string {
+  const suffix = returnPathInsideApp.startsWith('/app')
+    ? returnPathInsideApp
+    : '/app/collections/saved';
+  return `return=${encodeURIComponent(suffix)}`;
+}
+
 export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }

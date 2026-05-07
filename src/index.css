@@ -37,6 +37,43 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+@keyframes nommi-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nommi-card-enter {
+  animation: nommi-card-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes nommi-fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nommi-fade-rise {
+  animation: nommi-fade-rise 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nommi-card-enter,
+  .nommi-fade-rise {
+    animation: none !important;
+  }
+}
+
 h1,
 h2,
 h3,

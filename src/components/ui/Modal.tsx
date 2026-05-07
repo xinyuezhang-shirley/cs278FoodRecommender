@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -7,9 +8,11 @@ interface ModalProps {
   children: React.ReactNode;
   title?: string;
   fullScreen?: boolean;
+  /** Stack above another open modal (e.g. edit post on top of post detail). */
+  elevated?: boolean;
 }
 
-export function Modal({ open, onClose, children, title, fullScreen = false }: ModalProps) {
+export function Modal({ open, onClose, children, title, fullScreen = false, elevated = false }: ModalProps) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden';
@@ -27,8 +30,13 @@ export function Modal({ open, onClose, children, title, fullScreen = false }: Mo
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-end justify-center sm:items-center">
+  const overlay = (
+    <div
+      className={[
+        'fixed inset-0 flex items-end justify-center sm:items-center',
+        elevated ? 'z-[10050]' : 'z-[9999]',
+      ].join(' ')}
+    >
       <div
         className="absolute inset-0 bg-[#2f5fc4]/15 backdrop-blur-[2px]"
         onClick={onClose}
@@ -38,7 +46,7 @@ export function Modal({ open, onClose, children, title, fullScreen = false }: Mo
         className={[
           'relative bg-[#faf9f5] w-full max-w-lg shadow-[0_24px_64px_rgba(47,95,196,0.18)] border border-[#e5e7eb]/80',
           fullScreen
-            ? 'h-[100dvh] max-h-[100dvh] rounded-none overflow-y-auto overflow-x-hidden min-h-0'
+            ? 'h-[100dvh] max-h-[100dvh] rounded-none overflow-hidden flex flex-col min-h-0 overscroll-y-contain'
             : 'max-h-[90dvh] overflow-y-auto overflow-x-hidden rounded-[28px] sm:rounded-[28px] mt-auto sm:mt-0',
         ].join(' ')}
         role="dialog"
@@ -61,6 +69,8 @@ export function Modal({ open, onClose, children, title, fullScreen = false }: Mo
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(overlay, document.body) : null;
 }
 
 interface BottomSheetProps {

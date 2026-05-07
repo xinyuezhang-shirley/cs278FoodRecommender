@@ -1,5 +1,6 @@
 export type PostType = 'free_food' | 'recommendation' | 'event';
 export type ReactionType = 'like' | 'still_there';
+export type IntentType = 'saved' | 'been_there' | 'want_to_go' | 'favorite';
 
 export interface UserProfile {
   id: string;
@@ -8,6 +9,8 @@ export interface UserProfile {
   avatar_url?: string;
   bio?: string;
   food_personality?: string;
+  /** When true, signed-in users can browse this profile’s Nommi friends (see migration 009 + RPC). */
+  show_friends_public?: boolean;
   created_at: string;
 }
 
@@ -32,6 +35,10 @@ export interface Post {
   location_name: string;
   latitude?: number;
   longitude?: number;
+  /** Official site from Google Places (when picked from search). */
+  place_website_url?: string;
+  /** Link to the place on Google Maps from Places details. */
+  google_maps_url?: string;
   cuisine_tags: string[];
   dietary_tags: string[];
   is_free_food: boolean;
@@ -44,7 +51,8 @@ export interface Post {
   like_count?: number;
   still_there_count?: number;
   comment_count?: number;
-  user_reaction?: ReactionType | null;
+  /** Reaction chips the viewer has on this post (like and still_there can both be present). */
+  viewer_reactions?: ReactionType[];
   // Mock fields for rating / open-now filters
   mock_rating?: number;
   mock_is_open?: boolean;
@@ -131,6 +139,8 @@ export interface CreatePostData {
   location_name: string;
   latitude?: number;
   longitude?: number;
+  place_website_url?: string;
+  google_maps_url?: string;
   cuisine_tags: string[];
   dietary_tags: string[];
   is_free_food: boolean;
@@ -141,4 +151,41 @@ export interface CreatePostData {
 export interface AppError {
   message: string;
   code?: string;
+}
+
+export interface PostIntent {
+  id: string;
+  user_id: string;
+  post_id: string;
+  intent_type: IntentType;
+  created_at: string;
+}
+
+export interface FriendRequest {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+}
+
+export interface Friendship {
+  id: string;
+  user_a_id: string;
+  user_b_id: string;
+  created_at: string;
+}
+
+export interface DirectMessageThread {
+  id: string;
+  participant_ids: string[];
+  last_message_at: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  thread_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
 }

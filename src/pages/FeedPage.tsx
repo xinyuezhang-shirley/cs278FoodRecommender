@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, X } from 'lucide-react';
-import type { Post } from '../types';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { Search, X, Bookmark, Heart } from 'lucide-react';
+import type { Post, ReactionType } from '../types';
 import { getPaginatedPosts } from '../services/postService';
+import { reactToPost } from '../services/postService';
 import { useAuth } from '../context/AuthContext';
 import { PostGrid } from '../components/posts/PostGrid';
 import { PostDetail } from '../components/posts/PostDetail';
@@ -13,11 +15,14 @@ import { DistanceFilterDropdown } from '../components/map/DistanceFilterDropdown
 import { OpenNowDropdown } from '../components/map/OpenNowDropdown';
 import { RatingDropdown } from '../components/map/RatingDropdown';
 import { SortByDropdown } from '../components/map/SortByDropdown';
+import { QuickPostFilterToggles } from '../components/map/QuickPostFilterToggles';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useMapFilters } from '../hooks/useMapFilters';
 import emptyNoPostsYetTagline from '../assets/nommi/empty_no_posts_yet_tagline.png';
 import emptyNoPostFound from '../assets/nommi/empty_no_post_found.png';
 import emptyNoResultsSideways from '../assets/nommi/empty_no_results_sideways.png';
+import { getPostIntentsForUser, togglePostIntent } from '../services/interactionService';
+import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
 
 export function FeedPage() {
   const { user } = useAuth();
@@ -27,31 +32,95 @@ export function FeedPage() {
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
 
   const { request: requestLocation, userLocation } = useGeolocation();
 
   const {
     filters,
     setSearch, setCuisine, setDietary, setDistance,
-    setOpenNow, setRating, setSortBy,
+    setOpenNow, setRating, setSortBy, setPhotosOnly, setCampusOnly,
     activeFilterCount,
     filteredPosts,
   } = useMapFilters(allPosts, userLocation);
 
-  const loadPosts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const loadPosts = useCallback(async (silent?: boolean) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const posts = await getPaginatedPosts({}, user?.id);
       setAllPosts(posts);
+      if (user?.id) {
+        const intents = await getPostIntentsForUser(user.id);
+        setSavedPostIds(new Set(intents.filter(i => i.intent_type === 'saved').map(i => i.post_id)));
+      } else {
+        setSavedPostIds(new Set());
+      }
     } catch {
-      setError('Failed to load posts. Please try again.');
+      if (!silent) setError('Failed to load posts. Please try again.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [user?.id]);
+  async function handleLikeFromFeed(post: Post) {
+    if (!user?.id) return;
+    const vr = post.viewer_reactions ?? [];
+    const had = vr.includes('like');
+    const nextVr: ReactionType[] = had ? vr.filter((t) => t !== 'like') : [...vr, 'like'];
+    setAllPosts(prev => prev.map(p => (p.id !== post.id ? p : {
+      ...p,
+      viewer_reactions: nextVr,
+      like_count: Math.max(0, (p.like_count ?? 0) + (had ? -1 : 1)),
+    })));
+    try {
+      const result = await reactToPost(post.id, user.id, 'like');
+      setAllPosts(prev => prev.map(p => (p.id !== post.id ? p : { ...p, ...result })));
+    } catch {
+      setAllPosts(prev => prev.map(p => (p.id !== post.id ? p : post)));
+    }
+  }
+
+  async function handleToggleSaved(post: Post) {
+    if (!user?.id) return;
+    const existed = savedPostIds.has(post.id);
+    setSavedPostIds(prev => {
+      const next = new Set(prev);
+      if (existed) next.delete(post.id);
+      else next.add(post.id);
+      return next;
+    });
+    try {
+      await togglePostIntent(user.id, post.id, 'saved');
+    } catch {
+      setSavedPostIds(prev => {
+        const next = new Set(prev);
+        if (existed) next.add(post.id);
+        else next.delete(post.id);
+        return next;
+      });
+    }
+  }
+
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
+
+  const feedRealtimeSpecs = useMemo(
+    () => [
+      { table: 'posts' },
+      { table: 'reactions' },
+      { table: 'comments' },
+      ...(user?.id ? [{ table: 'post_intents' as const, filter: `user_id=eq.${user.id}` }] : []),
+    ],
+    [user?.id],
+  );
+
+  useDebouncedRealtime({
+    channelName: 'feed-realtime-global',
+    specs: feedRealtimeSpecs,
+    onEvent: () => void loadPosts(true),
+  });
 
   const feedEmptyImage =
     filteredPosts.length > 0
@@ -89,9 +158,29 @@ export function FeedPage() {
 
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-[500] bg-white/80 backdrop-blur-md px-4 pt-4 pb-3 space-y-3 border-b border-[#e5e7eb]/60">
-        <div className="mb-1">
-        <h1 className="brand text-3xl font-black text-[#2f5fc4] tracking-wide">Food feed</h1>
-          <p className="text-sm text-[#6b7280]">See what people are sharing around campus.</p>
+        <div className="mb-1 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="brand text-3xl font-black text-[#2f5fc4] tracking-wide">Food feed</h1>
+            <p className="text-sm text-[#6b7280]">See what people are sharing around campus.</p>
+          </div>
+          {user && (
+            <div className="shrink-0 flex flex-col gap-1.5 items-end">
+              <Link
+                to="/app/collections/saved"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-3 py-1.5 text-[11px] font-black text-[#2f5fc4] shadow-[0_4px_14px_rgba(47,95,196,0.1)] transition-all duration-200 motion-safe:active:scale-95 hover:border-[#2f5fc4]/30"
+              >
+                <Bookmark className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden />
+                Saved
+              </Link>
+              <Link
+                to="/app/collections/liked"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#e5e7eb] bg-white px-3 py-1.5 text-[11px] font-black text-[#f43f5e] shadow-[0_4px_14px_rgba(244,63,94,0.08)] transition-all duration-200 motion-safe:active:scale-95 hover:border-rose-200"
+              >
+                <Heart className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden />
+                Liked
+              </Link>
+            </div>
+          )}
         </div>
 
         <form onSubmit={handleSearchSubmit} className="relative">
@@ -112,6 +201,13 @@ export function FeedPage() {
         </form>
 
         <CuisineChipRow active={filters.cuisine} onChange={v => { setCuisine(v); }} />
+
+        <QuickPostFilterToggles
+          photosOnly={filters.photosOnly}
+          campusOnly={filters.campusOnly}
+          onPhotosOnly={setPhotosOnly}
+          onCampusOnly={setCampusOnly}
+        />
 
         <div className="flex gap-2 flex-wrap pb-1">
           <DietaryFilterDropdown selected={filters.dietary} onChange={setDietary} />
@@ -140,7 +236,7 @@ export function FeedPage() {
       {error && (
         <div className="mt-3 px-3 py-2.5 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100 flex items-center justify-between">
           <span>{error}</span>
-          <button type="button" onClick={loadPosts} className="text-xs font-bold text-red-700 ml-2 underline">Retry</button>
+          <button type="button" onClick={() => void loadPosts()} className="text-xs font-bold text-red-700 ml-2 underline">Retry</button>
         </div>
       )}
 
@@ -158,6 +254,9 @@ export function FeedPage() {
           loading={loading}
           onPostClick={setSelectedPost}
           onSharePost={user?.id ? p => setShareTarget(p) : undefined}
+          onLikePost={user?.id ? handleLikeFromFeed : undefined}
+          onToggleSavedPost={user?.id ? handleToggleSaved : undefined}
+          savedPostIds={savedPostIds}
           emptyTitle={filters.search ? 'No results found' : 'No bites yet'}
           emptyDescription={
             filters.search
@@ -179,7 +278,11 @@ export function FeedPage() {
               setAllPosts(prev => prev.filter(p => p.id !== selectedPost.id));
               setSelectedPost(null);
             }}
-            onActivityMayChange={() => loadPosts()}
+            onActivityMayChange={() => void loadPosts()}
+            onPostChange={(updated) => {
+              setSelectedPost(updated);
+              setAllPosts(prev => prev.map(p => (p.id === updated.id ? { ...p, ...updated } : p)));
+            }}
           />
         )}
       </Modal>
@@ -190,7 +293,7 @@ export function FeedPage() {
           onClose={() => setShareTarget(null)}
           post={shareTarget}
           userId={user.id}
-          onShared={() => loadPosts()}
+          onShared={() => void loadPosts()}
         />
       )}
     </div>

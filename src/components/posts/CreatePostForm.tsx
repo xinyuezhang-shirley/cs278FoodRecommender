@@ -1,12 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
-import type { CreatePostData, PostType } from '../../types';
-import { createPost } from '../../services/postService';
+import type { CreatePostData, PostType, Post } from '../../types';
+import { createPost, updatePost } from '../../services/postService';
 import { sharePostToCircle } from '../../services/circleService';
 import { useAuth } from '../../context/AuthContext';
 import { CUISINE_OPTIONS, DIETARY_OPTIONS } from '../../utils/helpers';
 import { ImageUploader } from './ImageUploader';
-import { LocationPicker } from './LocationPicker';
+import { LocationPicker, type LocationSelection } from './LocationPicker';
 
 // ─── Post type selector ────────────────────────────────────────────────────
 
@@ -151,13 +151,32 @@ function TagSelector({
   onToggleCuisine: (t: string) => void;
   onToggleDietary: (t: string) => void;
 }) {
+  const [cuisineSearch, setCuisineSearch] = useState('');
+  const [customCuisine, setCustomCuisine] = useState('');
+  const visibleCuisine = CUISINE_OPTIONS.filter(tag => tag.includes(cuisineSearch.toLowerCase()));
+
+  function addCustomCuisine() {
+    const normalized = customCuisine.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!normalized) return;
+    onToggleCuisine(normalized);
+    setCustomCuisine('');
+    setCuisineSearch('');
+  }
+
   return (
     <div className="px-4 py-3 space-y-4">
       {/* Cuisine */}
       <div>
         <p className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-2.5">Cuisine</p>
+        <input
+          type="text"
+          value={cuisineSearch}
+          onChange={e => setCuisineSearch(e.target.value)}
+          placeholder="Search or add tags"
+          className="w-full mb-2 px-3 py-2 bg-[#f3f4f6] rounded-xl text-sm outline-none"
+        />
         <div className="flex flex-wrap gap-2">
-          {CUISINE_OPTIONS.map(tag => {
+          {visibleCuisine.map(tag => {
             const active = cuisineTags.includes(tag);
             return (
               <button
@@ -176,6 +195,18 @@ function TagSelector({
               </button>
             );
           })}
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          <input
+            type="text"
+            value={customCuisine}
+            onChange={e => setCustomCuisine(e.target.value)}
+            placeholder="Custom cuisine tag"
+            className="flex-1 px-3 py-2 bg-[#f3f4f6] rounded-xl text-sm outline-none"
+          />
+          <button type="button" onClick={addCustomCuisine} className="px-3 py-2 text-xs font-bold rounded-xl border border-[#e5e7eb] text-[#2f5fc4]">
+            Add
+          </button>
         </div>
       </div>
 
@@ -215,32 +246,64 @@ function Divider() {
 
 // ─── Main form ────────────────────────────────────────────────────────────
 
+function postToFormData(p: Post, defaultCircleId?: string): CreatePostData {
+  return {
+    type: p.type,
+    title: p.title,
+    description: p.description ?? '',
+    image_url: p.image_url,
+    location_name: p.location_name,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    place_website_url: p.place_website_url,
+    google_maps_url: p.google_maps_url,
+    cuisine_tags: [...p.cuisine_tags],
+    dietary_tags: [...p.dietary_tags],
+    is_free_food: p.is_free_food,
+    expires_at: p.expires_at,
+    circle_id: p.circle_id ?? defaultCircleId,
+  };
+}
+
 interface CreatePostFormProps {
   onSuccess: (postId: string) => void;
   onCancel: () => void;
   defaultCircleId?: string;
+  /** Opens the form prefilled for editing; only the author should see this (enforced server-side). */
+  editPost?: Post;
+  onPostUpdated?: (post: Post) => void;
 }
 
-export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreatePostFormProps) {
+export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost, onPostUpdated }: CreatePostFormProps) {
   const { user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
-  const [form, setForm] = useState<CreatePostData>({
-    type: 'recommendation',
-    title: '',
-    description: '',
-    image_url: undefined,
-    location_name: '',
-    latitude: undefined,
-    longitude: undefined,
-    cuisine_tags: [],
-    dietary_tags: [],
-    is_free_food: false,
-    expires_at: undefined,
-    circle_id: defaultCircleId,
-  });
+  const initialForm = (): CreatePostData =>
+    editPost ? postToFormData(editPost, defaultCircleId) : {
+      type: 'recommendation',
+      title: '',
+      description: '',
+      image_url: undefined,
+      location_name: '',
+      latitude: undefined,
+      longitude: undefined,
+      place_website_url: undefined,
+      google_maps_url: undefined,
+      cuisine_tags: [],
+      dietary_tags: [],
+      is_free_food: false,
+      expires_at: undefined,
+      circle_id: defaultCircleId,
+    };
+
+  const [form, setForm] = useState<CreatePostData>(initialForm);
+
+  useEffect(() => {
+    if (!editPost) return;
+    setForm(postToFormData(editPost, defaultCircleId));
+  }, [editPost?.id, defaultCircleId]);
 
   function setField<K extends keyof CreatePostData>(key: K, value: CreatePostData[K]) {
     setForm(prev => {
@@ -255,18 +318,27 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
 
   function toggleTag(list: 'cuisine_tags' | 'dietary_tags', tag: string) {
     setForm(prev => {
-      const curr = prev[list];
+      const normalized = tag.trim().toLowerCase().replace(/\s+/g, ' ');
+      const curr = prev[list].map(t => t.trim().toLowerCase());
       return {
         ...prev,
-        [list]: curr.includes(tag) ? curr.filter(t => t !== tag) : [...curr, tag],
+        [list]: curr.includes(normalized)
+          ? curr.filter(t => t !== normalized)
+          : [...new Set([...curr, normalized])],
       };
     });
   }
 
-  function handleLocationSelect(name: string, lat?: number, lng?: number) {
-    setField('location_name', name);
-    setField('latitude', lat);
-    setField('longitude', lng);
+  function handleLocationSelect(sel: LocationSelection) {
+    const hasName = sel.name.trim().length > 0;
+    setForm(prev => ({
+      ...prev,
+      location_name: sel.name,
+      latitude: sel.lat,
+      longitude: sel.lng,
+      place_website_url: hasName ? sel.place_website_url : undefined,
+      google_maps_url: hasName ? sel.google_maps_url : undefined,
+    }));
   }
 
   async function handlePost() {
@@ -274,9 +346,36 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
     setError(null);
     setSubmitting(true);
     try {
+      if (editPost) {
+        const updated = await updatePost(
+          editPost.id,
+          {
+            type: form.type,
+            title: form.title,
+            description: form.description,
+            image_url: form.image_url,
+            location_name: form.location_name,
+            latitude: form.latitude,
+            longitude: form.longitude,
+            place_website_url: form.place_website_url,
+            google_maps_url: form.google_maps_url,
+            cuisine_tags: form.cuisine_tags,
+            dietary_tags: form.dietary_tags,
+            is_free_food: form.is_free_food,
+            expires_at: form.expires_at,
+            circle_id: form.circle_id,
+          },
+          user.id,
+        );
+        onPostUpdated?.(updated);
+        onSuccess(updated.id);
+        return;
+      }
+
       const circleTarget = defaultCircleId;
-      const { circle_id: _legacy, ...rest } = form;
-      const payload: CreatePostData = { ...rest, circle_id: undefined };
+      const stripped = { ...form };
+      delete stripped.circle_id;
+      const payload: CreatePostData = { ...stripped, circle_id: undefined };
       const post = await createPost(payload, user.id);
       if (circleTarget) {
         try {
@@ -287,7 +386,7 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
       }
       onSuccess(post.id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create post');
+      setError(err instanceof Error ? err.message : editPost ? 'Failed to save changes' : 'Failed to create post');
     } finally {
       setSubmitting(false);
     }
@@ -310,7 +409,9 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
         >
           <X className="w-5 h-5" />
         </button>
-        <span className="flex-1 text-center text-[15px] font-semibold text-[#1a1a1a]">New Post</span>
+        <span className="flex-1 text-center text-[15px] font-semibold text-[#1a1a1a]">
+          {editPost ? 'Edit post' : 'New Post'}
+        </span>
         <button
           type="button"
           onClick={handlePost}
@@ -322,7 +423,7 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
               : { color: '#d1d5db' }
           }
         >
-          {submitting ? 'Posting…' : 'Post'}
+          {submitting ? (editPost ? 'Saving…' : 'Posting…') : editPost ? 'Save' : 'Post'}
         </button>
       </div>
 
@@ -354,7 +455,7 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
             }}
             placeholder="What did you find?"
             maxLength={100}
-            autoFocus
+            autoFocus={!editPost}
             className="w-full text-[19px] font-semibold text-[#1a1a1a] placeholder-[#c8cdd8] outline-none bg-transparent leading-snug"
           />
           <textarea
@@ -388,6 +489,17 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId }: CreateP
           locationName={form.location_name}
           onSelect={handleLocationSelect}
         />
+        {(form.google_maps_url || form.place_website_url) && (
+          <div className="px-5 py-3 text-[11px] text-[#6b7280] space-y-1 bg-[#f8fafc] border-y border-[#eef2f6]">
+            <p className="font-black uppercase tracking-wide text-[#9ca3af] text-[10px]">Saved from Google Places</p>
+            {form.google_maps_url && (
+              <p className="truncate"><span className="font-semibold text-[#475569]">Maps:</span>{' '}<span className="text-[#2f5fc4]">{form.google_maps_url}</span></p>
+            )}
+            {form.place_website_url && (
+              <p className="truncate"><span className="font-semibold text-[#475569]">Site:</span>{' '}<span className="text-[#2f5fc4]">{form.place_website_url}</span></p>
+            )}
+          </div>
+        )}
 
         <Divider />
 

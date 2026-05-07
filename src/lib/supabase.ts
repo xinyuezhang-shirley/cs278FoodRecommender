@@ -10,6 +10,10 @@ function normalizeSupabaseUrl(raw: string): string {
 const url = normalizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL ?? '');
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
 
+if (!url || !anonKey) {
+  console.warn('[nommi] VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in .env.local for auth and data.');
+}
+
 export const supabase = createClient(url, anonKey, {
   auth: {
     persistSession: true,

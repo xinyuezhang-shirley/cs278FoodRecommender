@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { CircleActivityItem, FoodCircle, UserProfile } from '../types';
 import {
   getAllCircles,
@@ -16,9 +17,14 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { timeAgo } from '../utils/helpers';
 import { PostTypeBadge } from '../components/ui/Tag';
 import emptyNoPostsYetSimple from '../assets/nommi/empty_no_posts_yet_simple.png';
+import { FriendsAndMessagesPanel } from '../components/community/FriendsAndMessagesPanel';
+import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
 
 export function CommunityPage() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dmBootstrap = searchParams.get('dm')?.trim() || undefined;
+  const { user, profile } = useAuth();
   const [circles, setCircles] = useState<FoodCircle[]>([]);
   const [activity, setActivity] = useState<CircleActivityItem[]>([]);
   const [topContributors, setTopContributors] = useState<{ profile: UserProfile; post_count: number }[]>([]);
@@ -26,7 +32,6 @@ export function CommunityPage() {
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [selectedCircle, setSelectedCircle] = useState<FoodCircle | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-
   const refresh = useCallback(async () => {
     if (!user?.id) {
       setCircles([]);
@@ -53,6 +58,39 @@ export function CommunityPage() {
       })
       .finally(() => setLoading(false));
   }, [refresh]);
+
+  const communityRealtimeSpecs = useMemo(
+    () =>
+      user?.id
+        ? [
+            { table: 'circle_memberships', filter: `user_id=eq.${user.id}` },
+            { table: 'circle_posts' },
+            { table: 'posts' },
+            { table: 'food_circles' },
+          ]
+        : [],
+    [user?.id],
+  );
+
+  useDebouncedRealtime({
+    channelName: user?.id ? `community-${user.id}` : 'community-guest-off',
+    specs: communityRealtimeSpecs,
+    enabled: Boolean(user?.id),
+    onEvent: () => {
+      refresh().catch(() => undefined);
+    },
+  });
+
+  const clearDmBootstrap = useCallback(() => {
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('dm');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   const joinedCircles = circles.filter(c => c.is_member);
   const discoverCircles = circles.filter(c => !c.is_member);
@@ -113,6 +151,15 @@ export function CommunityPage() {
           </button>
         )}
       </div>
+
+      {user && (
+        <FriendsAndMessagesPanel
+          userId={user.id}
+          myUsernameHint={profile?.username}
+          bootstrapDmWithUserId={dmBootstrap}
+          onBootstrapDmConsumed={clearDmBootstrap}
+        />
+      )}
 
       <section className="mb-8">
         <h2 className="text-lg font-black text-[#2f5fc4] mb-1 tracking-tight">Your circles</h2>
@@ -183,7 +230,17 @@ export function CommunityPage() {
                 className="bg-white rounded-[28px] px-4 py-3 border border-[#e5e7eb] shadow-[0_10px_25px_rgba(47,95,196,0.08)]"
               >
                 <div className="flex items-start gap-3">
-                  {row.post.author && (
+                  {row.post.author && row.post.author_id && (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-full ring-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2f5fc4]/40"
+                      onClick={() => navigate(`/app/profile/${row.post.author_id}`)}
+                      aria-label={`View @${row.post.author.username}'s profile`}
+                    >
+                      <Avatar username={row.post.author.username} avatarUrl={row.post.author.avatar_url} size="xs" />
+                    </button>
+                  )}
+                  {row.post.author && !row.post.author_id && (
                     <Avatar username={row.post.author.username} avatarUrl={row.post.author.avatar_url} size="xs" />
                   )}
                   <div className="flex-1 min-w-0">
@@ -194,11 +251,26 @@ export function CommunityPage() {
                       </span>
                     </div>
                     <p className="text-sm font-black text-[#1a1a1a] leading-snug line-clamp-2">{row.post.title}</p>
-                    <p className="text-xs text-[#6b7280] mt-1 leading-relaxed">
-                      Original by{' '}
-                      <span className="font-bold text-[#1a1a1a]">@{row.post.author?.username ?? '…'}</span>
-                      {' · '}
-                      Shared by <span className="font-bold text-[#2f5fc4]">@{row.sharer.username}</span>
+                    <p className="text-xs text-[#6b7280] mt-1 leading-relaxed flex flex-wrap items-center gap-x-1 gap-y-1">
+                      <span>Original by</span>
+                      <button
+                        type="button"
+                        disabled={!row.post.author_id}
+                        onClick={() => row.post.author_id && navigate(`/app/profile/${row.post.author_id}`)}
+                        className="font-bold text-[#1a1a1a] underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline"
+                      >
+                        @{row.post.author?.username ?? '…'}
+                      </button>
+                      <span aria-hidden>·</span>
+                      <span>Shared by</span>
+                      <button
+                        type="button"
+                        disabled={!row.sharer?.id}
+                        onClick={() => row.sharer.id && navigate(`/app/profile/${row.sharer.id}`)}
+                        className="font-bold text-[#2f5fc4] underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline"
+                      >
+                        @{row.sharer.username}
+                      </button>
                       {' to '}
                       <span className="font-bold text-[#1a1a1a]">{row.circle.name}</span>
                     </p>
@@ -228,7 +300,12 @@ export function CommunityPage() {
           </p>
           <div className="bg-white rounded-[28px] divide-y divide-[#e5e7eb] border border-[#e5e7eb] shadow-[0_12px_32px_rgba(47,95,196,0.10)] overflow-hidden">
             {topContributors.map((c, i) => (
-              <div key={c.profile.id} className="flex items-center gap-3 px-4 py-3">
+              <button
+                key={c.profile.id}
+                type="button"
+                onClick={() => navigate(`/app/profile/${c.profile.id}`)}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#fafbff] transition-colors"
+              >
                 <span className="w-6 text-sm font-black text-[#6f90d8]">#{i + 1}</span>
                 <Avatar username={c.profile.username} avatarUrl={c.profile.avatar_url} size="sm" />
                 <div className="flex-1 min-w-0">
@@ -237,8 +314,8 @@ export function CommunityPage() {
                     <p className="text-xs text-[#6b7280] truncate">{c.profile.food_personality}</p>
                   )}
                 </div>
-                <span className="text-xs font-bold text-[#6f90d8]">{c.post_count} in circles</span>
-              </div>
+                <span className="text-xs font-bold text-[#6f90d8] shrink-0">{c.post_count} in circles</span>
+              </button>
             ))}
           </div>
         </section>

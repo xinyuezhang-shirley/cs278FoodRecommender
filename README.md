@@ -12,7 +12,7 @@ npm run dev
 
 Open http://localhost:5173 in your browser (best experienced in mobile viewport — use DevTools device mode).
 
-**Demo account:** `demo@stanford.edu` / `demo1234`
+**Demo account (Supabase seed):** `nommi278@nommi.stanford.demo` / `NommiDemo1!` — profile `@nommi278`. Extra seeds: bob & carmen at `@nommi.stanford.demo`.
 
 ---
 

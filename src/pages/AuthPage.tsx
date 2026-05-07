@@ -37,7 +37,7 @@ export function AuthPage({ mode }: AuthPageProps) {
   }
 
   function fillDemo() {
-    setEmail('alice@nommi.stanford.demo');
+    setEmail('nommi278@nommi.stanford.demo');
     setPassword('NommiDemo1!');
   }
 
@@ -127,7 +127,7 @@ export function AuthPage({ mode }: AuthPageProps) {
             onClick={fillDemo}
             className="w-full mt-3 py-2 text-xs text-[#6f90d8] font-semibold hover:underline transition-colors"
           >
-            Use demo account →
+            Use @nommi278 demo →
           </button>
         )}
 
