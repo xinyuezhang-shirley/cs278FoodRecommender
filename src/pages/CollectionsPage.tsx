@@ -13,7 +13,6 @@ import { collectionsTabFromParam, pathForCollectionsTab } from '../utils/collect
 import emptyNoPostsYetSimple from '../assets/nommi/empty_no_posts_yet_simple.png';
 import { openAppPostInNewTab } from '../utils/helpers';
 import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
-import { LogoPatternBackground } from '../components/ui/LogoPatternBackground';
 
 const KNOWN_COLLECTION_SEGMENTS = new Set([
   'saved',
@@ -172,7 +171,6 @@ export function CollectionsPage() {
 
   return (
     <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-28">
-      <LogoPatternBackground className="opacity-[0.05]" />
       <header className="sticky top-0 z-[400] -mx-4 px-4 pt-4 pb-3 bg-[#faf9f5]/92 backdrop-blur-md border-b border-[#e5e7eb]/60">
         <div className="flex items-center gap-2 mb-3">
           <Link

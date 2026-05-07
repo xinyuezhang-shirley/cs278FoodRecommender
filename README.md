@@ -32,6 +32,7 @@ Open [http://localhost:5173](http://localhost:5173) (best in a mobile viewport /
 - Realtime + async race-condition hardening across feed/map/profile/chat
 - Refreshed loading/empty visuals using custom Nommi graphics
 - More fluid, rounded, boba-themed micro-interactions and motion styling
+- Swipe navigation between main tabs and profile-based theme switch (Light/Dark)
 
 ---
 
@@ -80,8 +81,9 @@ If using SQL editor manually, execute migrations in order under `supabase/migrat
 Custom assets live in:
 
 - `public/graphics/nommi-logo.png`
-- `public/graphics/nommi-loading.png`
+- `public/graphics/nommi-loading-dark.png`
 - `public/graphics/nommi-empty-filter.png`
+- `public/graphics/nommi-bg-pattern.png`
 
 They are used by shared UI components (loading/empty/fail states and decorative non-home backgrounds). Motion respects `prefers-reduced-motion`.
 

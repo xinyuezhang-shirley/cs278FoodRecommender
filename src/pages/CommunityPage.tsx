@@ -13,7 +13,6 @@ import { CircleDetail } from '../components/community/CircleDetail';
 import { CreateCircleModal } from '../components/community/CreateCircleModal';
 import { Avatar } from '../components/ui/Avatar';
 import { PageLoader } from '../components/ui/LoadingSpinner';
-import { LogoPatternBackground } from '../components/ui/LogoPatternBackground';
 import { EmptyState } from '../components/ui/EmptyState';
 import { timeAgo } from '../utils/helpers';
 import { PostTypeBadge } from '../components/ui/Tag';
@@ -134,7 +133,6 @@ export function CommunityPage() {
 
   return (
     <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
-      <LogoPatternBackground />
 
       <div className="relative z-[1] pt-4 pb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>

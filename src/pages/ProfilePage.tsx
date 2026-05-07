@@ -22,7 +22,6 @@ import { ProfileRelationshipButton } from '../components/profile/ProfileRelation
 import { PostDetail } from '../components/posts/PostDetail';
 import { Modal } from '../components/ui/Modal';
 import { PageLoader } from '../components/ui/LoadingSpinner';
-import { LogoPatternBackground } from '../components/ui/LogoPatternBackground';
 import emptyNoPostsYetSimple from '../assets/nommi/empty_no_posts_yet_simple.png';
 import { getPostIntentsForUser, togglePostIntent } from '../services/interactionService';
 import { ShareToCircleModal } from '../components/community/ShareToCircleModal';
@@ -64,7 +63,13 @@ export function ProfilePage() {
   });
   const [publicFriends, setPublicFriends] = useState<UserProfile[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
   const avatarFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('nommi-theme');
+    setThemeMode(stored === 'dark' ? 'dark' : 'light');
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -409,7 +414,6 @@ export function ProfilePage() {
 
   return (
     <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
-      <LogoPatternBackground />
       <div className="flex items-center justify-between pt-4 pb-3 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {!isOwnProfile && (
@@ -770,6 +774,46 @@ export function ProfilePage() {
                 }}
               >
                 Change password
+              </button>
+            </div>
+          </div>
+          <div className="bg-white rounded-[24px] p-4 border border-[#e5e7eb]">
+            <h3 className="font-black text-[#2f5fc4] mb-2">Appearance</h3>
+            <p className="text-xs text-[#6b7280] mb-3 leading-relaxed">
+              Choose your vibe. Dark mode is optimized for Nommi blues and boba accents.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('nommi-theme', 'light');
+                  setThemeMode('light');
+                  window.dispatchEvent(new CustomEvent('nommi-theme-change', { detail: { theme: 'light' } }));
+                }}
+                className={[
+                  'rounded-full px-4 py-2 text-xs font-black border transition-colors',
+                  themeMode === 'light'
+                    ? 'bg-[#2f5fc4] text-white border-[#2f5fc4]'
+                    : 'bg-white text-[#2f5fc4] border-[#e5e7eb]',
+                ].join(' ')}
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('nommi-theme', 'dark');
+                  setThemeMode('dark');
+                  window.dispatchEvent(new CustomEvent('nommi-theme-change', { detail: { theme: 'dark' } }));
+                }}
+                className={[
+                  'rounded-full px-4 py-2 text-xs font-black border transition-colors',
+                  themeMode === 'dark'
+                    ? 'bg-[#111827] text-[#e5e7eb] border-[#111827]'
+                    : 'bg-white text-[#111827] border-[#e5e7eb]',
+                ].join(' ')}
+              >
+                Dark
               </button>
             </div>
           </div>

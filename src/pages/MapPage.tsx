@@ -19,7 +19,6 @@ import { PostDetail } from '../components/posts/PostDetail';
 import { Modal } from '../components/ui/Modal';
 import { PageLoader } from '../components/ui/LoadingSpinner';
 import { FailStateArt } from '../components/ui/LoadingSpinner';
-import { LogoPatternBackground } from '../components/ui/LogoPatternBackground';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { useMapFilters } from '../hooks/useMapFilters';
 import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
@@ -132,7 +131,6 @@ export function MapPage() {
 
   return (
     <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-3 pb-24">
-      <LogoPatternBackground />
 
       <div className="sticky top-0 z-[500] shrink-0 bg-[#faf9f5]/92 backdrop-blur-md pt-2 pb-2 space-y-2 border-b border-[#e5e7eb]/50">
         <MapSearchBar

@@ -21,6 +21,7 @@ interface PageLoaderProps {
 }
 
 export function PageLoader({ compact = false, label = 'Finding better flavors for you…' }: PageLoaderProps) {
+  const loadingSrc = '/graphics/nommi-loading-dark.png';
   return (
     <div
       className={
@@ -30,7 +31,7 @@ export function PageLoader({ compact = false, label = 'Finding better flavors fo
       }
     >
       <img
-        src="/graphics/nommi-loading.png"
+        src={loadingSrc}
         alt="Nommi loading illustration"
         className={
           compact

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
@@ -11,6 +12,25 @@ import { PostPage } from './pages/PostPage';
 import { EditPostPage } from './pages/EditPostPage';
 
 export default function App() {
+  useEffect(() => {
+    function applyTheme(theme: string | null) {
+      const html = document.documentElement;
+      const isDark = theme === 'dark';
+      html.classList.toggle('theme-dark', isDark);
+      html.style.colorScheme = isDark ? 'dark' : 'light';
+    }
+
+    applyTheme(localStorage.getItem('nommi-theme'));
+    const onThemeChange = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ theme?: string }>).detail;
+      applyTheme(detail?.theme ?? localStorage.getItem('nommi-theme'));
+    };
+    window.addEventListener('nommi-theme-change', onThemeChange as EventListener);
+    return () => {
+      window.removeEventListener('nommi-theme-change', onThemeChange as EventListener);
+    };
+  }, []);
+
   return (
     <BrowserRouter>
       <AuthProvider>

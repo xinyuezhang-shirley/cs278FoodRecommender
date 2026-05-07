@@ -71,9 +71,23 @@ body {
   animation: nommi-fade-rise 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes nommi-route-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.nommi-route-enter {
+  animation: nommi-route-enter 0.22s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .nommi-card-enter,
   .nommi-fade-rise,
+  .nommi-route-enter,
   .nommi-float,
   .nommi-float-soft,
   .nommi-wobble,
@@ -122,16 +136,151 @@ body {
   box-shadow: 0 12px 28px rgba(47, 95, 196, 0.1);
 }
 
+/* Shared consistency pass for cards/surfaces across pages */
+.nommi-app-shell [class*='rounded-[24px]'],
+.nommi-app-shell [class*='rounded-[28px]'] {
+  box-shadow: 0 10px 24px rgba(47, 95, 196, 0.1) !important;
+}
+
+/* Force the provided Nommi pattern to visibly come through app pages. */
+.nommi-app-shell [class*='bg-[#faf9f5]'] {
+  background-color: rgba(250, 249, 245, 0.66) !important;
+}
+
+.nommi-app-shell [class*='bg-white'] {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.nommi-pattern-image {
+  opacity: 0.35 !important;
+  filter: brightness(0.86) saturate(1.04) contrast(1.03);
+}
+
+.nommi-pattern-scrim {
+  background: linear-gradient(
+    180deg,
+    rgba(8, 20, 44, 0.08) 0%,
+    rgba(8, 20, 44, 0.05) 38%,
+    rgba(8, 20, 44, 0.08) 100%
+  );
+}
+
 .nommi-tilted-grid {
-  transform: rotate(-14deg) scale(1.2);
+  transform: rotate(-42deg) scale(1.64);
   background-image:
     linear-gradient(rgba(47, 95, 196, 0.1) 1px, transparent 1px),
     linear-gradient(90deg, rgba(47, 95, 196, 0.1) 1px, transparent 1px),
     url('/graphics/nommi-logo.png');
-  background-size: 34px 34px, 34px 34px, 72px 72px;
-  background-position: 0 0, 0 0, 18px 18px;
+  background-size: 46px 46px, 46px 46px, 92px 92px;
+  background-position: 0 0, 0 0, 20px 20px;
   background-repeat: repeat;
-  filter: saturate(1.1);
+  filter: saturate(1.18) contrast(1.03);
+}
+
+/* Dark mode theme layer (works with current Tailwind arbitrary color classes). */
+html.theme-dark,
+html.theme-dark body {
+  background: #0b1020 !important;
+  color: #e6eaf5 !important;
+}
+
+html.theme-dark [class*='bg-[#faf9f5]'],
+html.theme-dark [class*='bg-white'],
+html.theme-dark [class*='bg-[#fafbff]'] {
+  background-color: rgba(16, 24, 45, 0.78) !important;
+}
+
+html.theme-dark [class*='bg-[#f3f4f6]'],
+html.theme-dark [class*='bg-[#f5f7ff]'],
+html.theme-dark [class*='bg-[#eaf1ff]'],
+html.theme-dark [class*='bg-[#faf9f5]'] {
+  background-color: rgba(21, 32, 58, 0.8) !important;
+}
+
+html.theme-dark [class*='text-[#1a1a1a]'] {
+  color: #eef2ff !important;
+}
+
+html.theme-dark [class*='text-[#2f5fc4]'],
+html.theme-dark [class*='text-[#6f90d8]'] {
+  color: #9bb9ff !important;
+}
+
+html.theme-dark [class*='text-[#6b7280]'],
+html.theme-dark [class*='text-[#9ca3af]'] {
+  color: #a8b4d4 !important;
+}
+
+html.theme-dark [class*='border-[#e5e7eb]'],
+html.theme-dark [class*='border-[#eef2f6]'],
+html.theme-dark [class*='border-[#e8ecf4]'] {
+  border-color: #253252 !important;
+}
+
+html.theme-dark [class*='shadow-['] {
+  box-shadow: 0 10px 24px rgba(2, 8, 23, 0.45) !important;
+}
+
+html.theme-dark [class*='from-[#2f5fc4]'],
+html.theme-dark [class*='to-[#6f90d8]'] {
+  --tw-gradient-from: #4f79de !important;
+  --tw-gradient-to: #82a5f0 !important;
+}
+
+html.theme-dark .nommi-surface-glass {
+  background: rgba(16, 24, 45, 0.88) !important;
+  border-color: rgba(37, 50, 82, 0.9) !important;
+}
+
+html.theme-dark .nommi-pattern-image {
+  opacity: 0.35 !important;
+  filter: brightness(0.9) saturate(0.84) contrast(1.08);
+}
+
+html.theme-dark .nommi-pattern-scrim {
+  background: linear-gradient(
+    180deg,
+    rgba(4, 8, 18, 0.22) 0%,
+    rgba(4, 8, 18, 0.14) 38%,
+    rgba(4, 8, 18, 0.22) 100%
+  );
+}
+
+html.theme-dark .nommi-tilted-grid {
+  filter: saturate(1.1) brightness(0.88) contrast(1.05);
+}
+
+/* Theme-specific red/pink accents */
+html:not(.theme-dark) [class*='bg-[#f43f5e]'],
+html:not(.theme-dark) [class*='bg-[#ff4f73]'] {
+  background-color: #f35674 !important;
+}
+
+html:not(.theme-dark) [class*='from-[#ff4f73]'],
+html:not(.theme-dark) [class*='to-[#ff7089]'] {
+  --tw-gradient-from: #ff5e81 !important;
+  --tw-gradient-to: #ff8fa8 !important;
+}
+
+html.theme-dark [class*='bg-[#f43f5e]'],
+html.theme-dark [class*='bg-[#ff4f73]'],
+html.theme-dark [class*='bg-[#ff7089]'] {
+  background-color: #c7507a !important;
+  color: #fff6fb !important;
+  border-color: #dc6b92 !important;
+}
+
+html.theme-dark [class*='from-[#ff4f73]'],
+html.theme-dark [class*='to-[#ff7089]'],
+html.theme-dark [class*='from-[#f43f5e]'],
+html.theme-dark [class*='to-[#ff7089]'] {
+  --tw-gradient-from: #d26088 !important;
+  --tw-gradient-to: #ec93b1 !important;
+}
+
+html.theme-dark [class*='text-[#f43f5e]'],
+html.theme-dark [class*='text-[#ff4f73]'] {
+  color: #ff9bb9 !important;
 }
 
 h1,
