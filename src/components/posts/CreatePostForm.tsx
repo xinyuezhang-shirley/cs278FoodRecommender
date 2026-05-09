@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { CreatePostData, PostType, Post } from '../../types';
-import { createPost, updatePost } from '../../services/postService';
+import { createPost, updatePost, deletePost } from '../../services/postService';
 import { sharePostToCircle } from '../../services/circleService';
 import { useAuth } from '../../context/AuthContext';
-import { CUISINE_OPTIONS, DIETARY_OPTIONS } from '../../utils/helpers';
+import { DIETARY_OPTIONS } from '../../utils/helpers';
 import { ImageUploader } from './ImageUploader';
+import { CuisineTagsFormField } from './CuisineTagsFormField';
 import { LocationPicker, type LocationSelection } from './LocationPicker';
+import { Modal } from '../ui/Modal';
 
 // ─── Post type selector ────────────────────────────────────────────────────
 
@@ -131,108 +133,38 @@ function ExpirationSelector({
   );
 }
 
-// ─── Tag selector ─────────────────────────────────────────────────────────
+// ─── Dietary tags ─────────────────────────────────────────────────────────
 
-const CUISINE_EMOJI: Record<string, string> = {
-  boba: '🧋', ramen: '🍜', sushi: '🍣', pizza: '🍕',
-  coffee: '☕', sandwiches: '🥪', salad: '🥗', tacos: '🌮',
-  burgers: '🍔', 'dim sum': '🥟', thai: '🍛', korean: '🥩',
-  indian: '🫔', mediterranean: '🥙',
-};
-
-function TagSelector({
-  cuisineTags,
+function DietaryTagRow({
   dietaryTags,
-  onToggleCuisine,
   onToggleDietary,
 }: {
-  cuisineTags: string[];
   dietaryTags: string[];
-  onToggleCuisine: (t: string) => void;
   onToggleDietary: (t: string) => void;
 }) {
-  const [cuisineSearch, setCuisineSearch] = useState('');
-  const [customCuisine, setCustomCuisine] = useState('');
-  const visibleCuisine = CUISINE_OPTIONS.filter(tag => tag.includes(cuisineSearch.toLowerCase()));
-
-  function addCustomCuisine() {
-    const normalized = customCuisine.trim().toLowerCase().replace(/\s+/g, ' ');
-    if (!normalized) return;
-    onToggleCuisine(normalized);
-    setCustomCuisine('');
-    setCuisineSearch('');
-  }
-
   return (
-    <div className="px-4 py-3 space-y-4">
-      {/* Cuisine */}
-      <div>
-        <p className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-2.5">Cuisine</p>
-        <input
-          type="text"
-          value={cuisineSearch}
-          onChange={e => setCuisineSearch(e.target.value)}
-          placeholder="Search or add tags"
-          className="w-full mb-2 px-3 py-2 bg-[#f3f4f6] rounded-xl text-sm outline-none"
-        />
-        <div className="flex flex-wrap gap-2">
-          {visibleCuisine.map(tag => {
-            const active = cuisineTags.includes(tag);
-            return (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => onToggleCuisine(tag)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
-                style={
-                  active
-                    ? { background: '#ede9fe', color: '#6d28d9', borderColor: '#c4b5fd' }
-                    : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }
-                }
-              >
-                {CUISINE_EMOJI[tag] && <span>{CUISINE_EMOJI[tag]}</span>}
-                {tag}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex items-center gap-2 mt-2">
-          <input
-            type="text"
-            value={customCuisine}
-            onChange={e => setCustomCuisine(e.target.value)}
-            placeholder="Custom cuisine tag"
-            className="flex-1 px-3 py-2 bg-[#f3f4f6] rounded-xl text-sm outline-none"
-          />
-          <button type="button" onClick={addCustomCuisine} className="px-3 py-2 text-xs font-bold rounded-xl border border-[#e5e7eb] text-[#2f5fc4]">
-            Add
-          </button>
-        </div>
-      </div>
-
-      {/* Dietary */}
-      <div>
-        <p className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-2.5">Dietary</p>
-        <div className="flex flex-wrap gap-2">
-          {DIETARY_OPTIONS.map(tag => {
-            const active = dietaryTags.includes(tag);
-            return (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => onToggleDietary(tag)}
-                className="px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
-                style={
-                  active
-                    ? { background: '#dcfce7', color: '#16a34a', borderColor: '#86efac' }
-                    : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }
-                }
-              >
-                {tag}
-              </button>
-            );
-          })}
-        </div>
+    <div className="px-4 py-3 space-y-2">
+      <p className="text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide mb-2">Dietary</p>
+      <p className="text-[11px] text-[#9ca3af] mb-2 leading-snug">Optional — helps friends with dietary needs.</p>
+      <div className="flex flex-wrap gap-2">
+        {DIETARY_OPTIONS.map(tag => {
+          const active = dietaryTags.includes(tag);
+          return (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => onToggleDietary(tag)}
+              className="px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
+              style={
+                active
+                  ? { background: '#dcfce7', color: '#16a34a', borderColor: '#86efac' }
+                  : { background: 'white', color: '#6b7280', borderColor: '#e5e7eb' }
+              }
+            >
+              {tag}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -272,12 +204,24 @@ interface CreatePostFormProps {
   /** Opens the form prefilled for editing; only the author should see this (enforced server-side). */
   editPost?: Post;
   onPostUpdated?: (post: Post) => void;
+  /** Called after the post is deleted from the server (e.g. navigate away). */
+  onPostDeleted?: () => void;
 }
 
-export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost, onPostUpdated }: CreatePostFormProps) {
+export function CreatePostForm({
+  onSuccess,
+  onCancel,
+  defaultCircleId,
+  editPost,
+  onPostUpdated,
+  onPostDeleted,
+}: CreatePostFormProps) {
   const { user } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
   const initialForm = (): CreatePostData =>
@@ -341,8 +285,17 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost,
     }));
   }
 
+  const baseCanPost =
+    form.title.trim().length > 0 &&
+    form.location_name.trim().length > 0 &&
+    (!form.is_free_food || !!form.expires_at);
+
   async function handlePost() {
-    if (!user || !canPost) return;
+    if (!user || !baseCanPost) return;
+    if (form.cuisine_tags.length === 0) {
+      setError('Please select at least one food category so others can find your post.');
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -392,13 +345,23 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost,
     }
   }
 
-  const canPost =
-    form.title.trim().length > 0 &&
-    form.location_name.trim().length > 0 &&
-    (!form.is_free_food || !!form.expires_at);
+  async function handleConfirmDelete() {
+    if (!user?.id || !editPost) return;
+    setDeleteError(null);
+    setDeleting(true);
+    try {
+      await deletePost(editPost.id, user.id);
+      setDeleteModalOpen(false);
+      onPostDeleted?.();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete post');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
-    <div className="flex flex-col min-h-full bg-white">
+    <div className="flex min-h-dvh flex-col bg-white">
 
       {/* ── Top bar ── */}
       <div className="flex items-center px-4 py-3 border-b border-[#f3f4f6] sticky top-0 z-10 bg-white">
@@ -415,10 +378,10 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost,
         <button
           type="button"
           onClick={handlePost}
-          disabled={!canPost || submitting}
+          disabled={!baseCanPost || submitting}
           className="px-4 py-1.5 rounded-full text-sm font-semibold transition-all"
           style={
-            canPost && !submitting
+            baseCanPost && !submitting
               ? { background: '#f43f5e', color: 'white' }
               : { color: '#d1d5db' }
           }
@@ -504,10 +467,12 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost,
         <Divider />
 
         {/* 5. Tags */}
-        <TagSelector
+        <CuisineTagsFormField
           cuisineTags={form.cuisine_tags}
-          dietaryTags={form.dietary_tags}
           onToggleCuisine={tag => toggleTag('cuisine_tags', tag)}
+        />
+        <DietaryTagRow
+          dietaryTags={form.dietary_tags}
           onToggleDietary={tag => toggleTag('dietary_tags', tag)}
         />
 
@@ -522,9 +487,67 @@ export function CreatePostForm({ onSuccess, onCancel, defaultCircleId, editPost,
           </>
         )}
 
+        {editPost && (
+          <>
+            <Divider />
+            <div className="px-4 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteModalOpen(true);
+                }}
+                disabled={submitting || deleting}
+                className="w-full py-3 rounded-xl text-sm font-semibold text-red-600 border border-red-200 bg-red-50/60 hover:bg-red-50 transition-colors disabled:opacity-50"
+              >
+                Delete post
+              </button>
+            </div>
+          </>
+        )}
+
         {/* Breathing room at the bottom */}
         <div className="h-10" />
       </div>
+
+      {editPost && (
+        <Modal
+          open={deleteModalOpen}
+          onClose={() => !deleting && setDeleteModalOpen(false)}
+          title="Delete post?"
+          elevated
+        >
+          <p className="px-4 pb-3 text-sm text-[#4b5563] leading-relaxed">
+            Are you sure you want to delete this post? This cannot be undone.
+          </p>
+          {deleteError && (
+            <div className="mx-4 mb-3 px-3 py-2 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100">
+              {deleteError}
+            </div>
+          )}
+          <div className="flex gap-2 px-4 pb-4">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => {
+                setDeleteModalOpen(false);
+                setDeleteError(null);
+              }}
+              className="flex-1 py-3 rounded-full text-sm font-semibold border border-[#e5e7eb] bg-white text-[#374151] hover:bg-[#f9fafb] disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => void handleConfirmDelete()}
+              className="flex-1 py-3 rounded-full text-sm font-black bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -7,10 +7,6 @@ import { getPostsByAuthor, reactToPost } from '../services/postService';
 import { getUserFreeFoodCount, getUserCircleCount, getAllCircles, joinCircle } from '../services/circleService';
 import {
   fetchPublicProfileById,
-  getEmailVerificationStatus,
-  resendVerificationEmail,
-  updateAuthEmail,
-  updateAuthPassword,
   updateUserProfile,
 } from '../services/authService';
 import { fetchSubjectFriendProfiles } from '../services/socialService';
@@ -51,14 +47,10 @@ export function ProfilePage() {
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
-  const [emailVerification, setEmailVerification] = useState<{ verified: boolean; email: string } | null>(null);
   const [settingsForm, setSettingsForm] = useState({
     username: '',
     bio: '',
     avatar_url: '',
-    email: '',
-    password: '',
-    currentPassword: '',
     show_friends_public: false,
   });
   const [publicFriends, setPublicFriends] = useState<UserProfile[]>([]);
@@ -138,14 +130,8 @@ export function ProfilePage() {
           username: profile?.username ?? '',
           bio: profile?.bio ?? '',
           avatar_url: profile?.avatar_url ?? '',
-          email: user.email,
-          password: '',
-          currentPassword: '',
           show_friends_public: Boolean(profile?.show_friends_public),
         });
-        const status = await getEmailVerificationStatus().catch(() => null);
-        if (cancelled) return;
-        setEmailVerification(status);
       } else {
         if (cancelled) return;
         setCircles([]);
@@ -413,7 +399,7 @@ export function ProfilePage() {
   ];
 
   return (
-    <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
+    <div className="relative flex w-full flex-col bg-[#faf9f5] px-4">
       <div className="flex items-center justify-between pt-4 pb-3 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {!isOwnProfile && (
@@ -470,7 +456,7 @@ export function ProfilePage() {
                 <div className="mt-4 flex flex-wrap gap-2 items-center">
                   <button
                     type="button"
-                    onClick={() => navigate(`/app/community?dm=${encodeURIComponent(targetUserId)}`)}
+                    onClick={() => navigate(`/app/chat?dm=${encodeURIComponent(targetUserId)}`)}
                     className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-black text-[#115e59] bg-[#ccfbf1] border border-teal-200 shadow-[0_8px_20px_rgba(20,184,166,0.18)] hover:bg-teal-100"
                   >
                     <MessagesSquare className="w-4 h-4 shrink-0" aria-hidden /> Message
@@ -583,7 +569,7 @@ export function ProfilePage() {
       )}
 
       {(!isOwnProfile || tab === 'posts') ? (
-        <div className="flex-1">
+        <div className="w-full">
           {isOwnProfile && user && (
             <Link
               to="/app/collections/saved"
@@ -615,7 +601,6 @@ export function ProfilePage() {
         <ProfileIdentityTab
           posts={posts}
           freeFoodCount={freeFoodCount}
-          circleCount={circleCount}
           circles={circles}
           joiningCircleId={joiningCircleId}
           onJoinCircle={handleJoinCircle}
@@ -694,90 +679,6 @@ export function ProfilePage() {
             </div>
           </div>
           <div className="bg-white rounded-[24px] p-4 border border-[#e5e7eb]">
-            <h3 className="font-black text-[#2f5fc4] mb-2">Email</h3>
-            <p className="text-xs text-[#6b7280] mb-2 font-medium">
-              Status: {emailVerification?.verified ? 'Verified' : 'Not verified'}
-            </p>
-            <div className="space-y-2">
-              <input className="w-full rounded-xl border border-[#e5e7eb] px-3 py-2 text-sm" value={settingsForm.email} onChange={e => setSettingsForm(s => ({ ...s, email: e.target.value }))} placeholder="Email" />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-full px-3 py-1.5 border border-[#e5e7eb] text-xs font-bold text-[#2f5fc4]"
-                  onClick={() => {
-                    void resendVerificationEmail()
-                      .then(() => setSettingsMsg('Verification email sent'))
-                      .catch(() => setSettingsMsg('Could not resend verification email'));
-                  }}
-                >
-                  Resend verification
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full px-3 py-1.5 bg-[#2f5fc4] text-white text-xs font-bold shadow-sm"
-                  onClick={async () => {
-                    if (!user) return;
-                    setSettingsMsg(null);
-                    try {
-                      if (settingsForm.email.trim() !== user.email) await updateAuthEmail(settingsForm.email.trim());
-                      setSettingsMsg('Email preferences saved.');
-                    } catch (e) {
-                      setSettingsMsg(e instanceof Error ? e.message : 'Could not update email');
-                    }
-                  }}
-                >
-                  Save email
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-[24px] p-4 border border-[#e5e7eb]">
-            <h3 className="font-black text-[#2f5fc4] mb-2">Password</h3>
-            <p className="text-xs text-[#6b7280] mb-3 leading-relaxed">
-              For your safety, Nommi verifies your current password before applying a new one.
-            </p>
-            <div className="space-y-2">
-              <input
-                type="password"
-                autoComplete="current-password"
-                className="w-full rounded-xl border border-[#e5e7eb] px-3 py-2 text-sm"
-                value={settingsForm.currentPassword}
-                onChange={e => setSettingsForm(s => ({ ...s, currentPassword: e.target.value }))}
-                placeholder="Current password"
-              />
-              <input
-                type="password"
-                autoComplete="new-password"
-                className="w-full rounded-xl border border-[#e5e7eb] px-3 py-2 text-sm"
-                value={settingsForm.password}
-                onChange={e => setSettingsForm(s => ({ ...s, password: e.target.value }))}
-                placeholder="New password"
-              />
-              <button
-                type="button"
-                className="rounded-full px-3 py-1.5 border border-[#e5e7eb] text-xs font-bold text-[#2f5fc4]"
-                onClick={async () => {
-                  if (!user?.email) return;
-                  const next = settingsForm.password.trim();
-                  setSettingsMsg(null);
-                  if (!next) {
-                    setSettingsMsg('Enter a new password first.');
-                    return;
-                  }
-                  try {
-                    await updateAuthPassword(user.email, settingsForm.currentPassword, next);
-                    setSettingsForm(s => ({ ...s, password: '', currentPassword: '' }));
-                    setSettingsMsg('Password updated.');
-                  } catch (e) {
-                    setSettingsMsg(e instanceof Error ? e.message : 'Could not update password');
-                  }
-                }}
-              >
-                Change password
-              </button>
-            </div>
-          </div>
-          <div className="bg-white rounded-[24px] p-4 border border-[#e5e7eb]">
             <h3 className="font-black text-[#2f5fc4] mb-2">Appearance</h3>
             <p className="text-xs text-[#6b7280] mb-3 leading-relaxed">
               Choose your vibe. Dark mode is optimized for Nommi blues and boba accents.
@@ -816,9 +717,6 @@ export function ProfilePage() {
                 Dark
               </button>
             </div>
-          </div>
-          <div className="bg-white rounded-[24px] p-4 border border-[#e5e7eb] text-xs text-[#6b7280]">
-            Friend requests, DMs, and realtime notifications are scaffolded in the service layer for incremental backend rollout.
           </div>
           {settingsMsg && <p className="text-sm text-[#2f5fc4] font-semibold">{settingsMsg}</p>}
         </div>

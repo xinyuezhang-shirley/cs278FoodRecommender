@@ -28,6 +28,8 @@ import {
   sendThreadMessage,
   sendThreadImage,
   openOrCreateDirectThread,
+  fetchLatestDmPreviewByThread,
+  markDmThreadRead,
 } from '../../services/socialService';
 import { compressImageFile } from '../../utils/imageCompress';
 import { supabase } from '../../lib/supabase';
@@ -37,6 +39,7 @@ import {
   searchProfilesByUsernamePrefix,
   type FriendSearchRow,
 } from '../../services/friendDiscoveryService';
+import { useChatUnread } from '../../context/ChatUnreadContext';
 
 type Tab = 'people' | 'chats';
 
@@ -44,18 +47,34 @@ function normalizeRequestStatus(raw: FriendRequest['status'] | undefined): strin
   return String(raw ?? '').trim().toLowerCase();
 }
 
+function cx(...parts: (string | undefined | false)[]) {
+  return parts.filter(Boolean).join(' ');
+}
+
 export function FriendsAndMessagesPanel({
   userId,
   myUsernameHint,
   bootstrapDmWithUserId,
   onBootstrapDmConsumed,
+  onConversationOpenChange,
+  className,
 }: {
   userId: string;
   myUsernameHint?: string;
   /** When set (e.g. `?dm=` query), opens a 1:1 thread once — no friendship required. */
   bootstrapDmWithUserId?: string | null;
   onBootstrapDmConsumed?: () => void;
+  /** Fires when a thread view is opened (true) vs list (false); use to hide outer page chrome. */
+  onConversationOpenChange?: (open: boolean) => void;
+  className?: string;
 }) {
+  const {
+    dmUnreadByThreadId,
+    reloadDmUnreadCounts,
+    patchDmThreadUnread,
+    scheduleDmUnreadReload,
+  } = useChatUnread();
+
   const [tab, setTab] = useState<Tab>('people');
   const [friendships, setFriendships] = useState<Friendship[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
@@ -72,7 +91,15 @@ export function FriendsAndMessagesPanel({
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [composer, setComposer] = useState('');
   const [sendingImage, setSendingImage] = useState(false);
+  const [messageSending, setMessageSending] = useState(false);
+  const [messageSendError, setMessageSendError] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  /** Message preview snippets for chat list rows (loaded with threads). */
+  const [threadPreviewById, setThreadPreviewById] = useState<
+    Record<string, { preview: string; at: string }>
+  >({});
 
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatQuery, setNewChatQuery] = useState('');
@@ -106,6 +133,13 @@ export function FriendsAndMessagesPanel({
           : null,
       );
       setThreads(th);
+      const previews = await fetchLatestDmPreviewByThread(th.map((t) => t.id));
+      const nextPv: Record<string, { preview: string; at: string }> = {};
+      previews.forEach((val, tid) => {
+        nextPv[tid] = val;
+      });
+      setThreadPreviewById(nextPv);
+
       const ids = new Set<string>();
       frs.forEach(f => {
         ids.add(f.user_a_id);
@@ -117,10 +151,11 @@ export function FriendsAndMessagesPanel({
       });
       th.forEach(t => t.participant_ids.forEach(p => ids.add(p)));
       setProfileMap(await loadProfilesForIds([...ids]));
+      await reloadDmUnreadCounts();
     } finally {
       setRefreshing(false);
     }
-  }, [userId]);
+  }, [userId, reloadDmUnreadCounts]);
 
   useEffect(() => {
     refreshRef.current = refresh;
@@ -130,24 +165,48 @@ export function FriendsAndMessagesPanel({
     activeThreadIdRef.current = activeThread?.id ?? null;
   }, [activeThread?.id]);
 
-  const guardedLoadMessages = useCallback(async (threadId: string) => {
-    const seq = ++messageLoadSeqRef.current;
-    const rows = await listThreadMessages(threadId);
-    if (seq !== messageLoadSeqRef.current) return;
-    if (activeThreadIdRef.current !== threadId) return;
-    setMessages(rows);
-  }, []);
+  useEffect(() => {
+    onConversationOpenChange?.(Boolean(activeThread));
+  }, [activeThread, onConversationOpenChange]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, activeThread?.id]);
+
+  const guardedLoadMessages = useCallback(
+    async (threadId: string) => {
+      const seq = ++messageLoadSeqRef.current;
+      const rows = await listThreadMessages(threadId);
+      if (seq !== messageLoadSeqRef.current) return;
+      if (activeThreadIdRef.current !== threadId) return;
+      setMessages(rows);
+
+      const marked = await markDmThreadRead(userId, threadId);
+
+      if (seq !== messageLoadSeqRef.current) return;
+      if (activeThreadIdRef.current !== threadId) return;
+
+      if (marked.ok) patchDmThreadUnread(threadId, 0);
+      scheduleDmUnreadReload();
+    },
+    [userId, patchDmThreadUnread, scheduleDmUnreadReload],
+  );
 
   /** Open DM with anyone on Nommi — friendship not required (RLS: you include yourself). */
   const startDmWithUser = useCallback(async (remoteUserId: string) => {
     const trimmed = remoteUserId.trim();
     if (!trimmed || trimmed === userId) return;
-    const thread = await openOrCreateDirectThread(userId, trimmed);
-    setActiveThread(thread);
-    activeThreadIdRef.current = thread.id;
-    await guardedLoadMessages(thread.id);
-    setTab('chats');
-    await refreshRef.current();
+    try {
+      const thread = await openOrCreateDirectThread(userId, trimmed);
+      setActiveThread(thread);
+      activeThreadIdRef.current = thread.id;
+      await guardedLoadMessages(thread.id);
+      setTab('chats');
+      await refreshRef.current();
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not open that chat.');
+      window.setTimeout(() => setToast(null), 3200);
+    }
   }, [guardedLoadMessages, userId]);
 
   useEffect(() => {
@@ -159,9 +218,6 @@ export function FriendsAndMessagesPanel({
     void (async () => {
       try {
         await startDmWithUser(raw);
-      } catch {
-        setToast('Could not open that chat.');
-        window.setTimeout(() => setToast(null), 2600);
       } finally {
         onBootstrapDmConsumed?.();
       }
@@ -204,6 +260,7 @@ export function FriendsAndMessagesPanel({
     function onVisibility() {
       if (document.visibilityState === 'visible') {
         refreshRef.current().catch(() => undefined);
+        void reloadDmUnreadCounts();
       }
     }
     document.addEventListener('visibilitychange', onVisibility);
@@ -211,7 +268,7 @@ export function FriendsAndMessagesPanel({
       document.removeEventListener('visibilitychange', onVisibility);
       void supabase.removeChannel(ch);
     };
-  }, [userId]);
+  }, [userId, reloadDmUnreadCounts]);
 
   useEffect(() => {
     const tid = activeThread?.id?.trim();
@@ -267,6 +324,20 @@ export function FriendsAndMessagesPanel({
     friendship: f,
     otherId: f.user_a_id === userId ? f.user_b_id : f.user_a_id,
   })), [friendships, userId]);
+
+  const sortedThreads = useMemo(() => {
+    const list = [...threads];
+    list.sort((a, b) => {
+      const ua = dmUnreadByThreadId[a.id] ?? 0;
+      const ub = dmUnreadByThreadId[b.id] ?? 0;
+      const hasA = ua > 0;
+      const hasB = ub > 0;
+      if (hasA !== hasB) return hasA ? -1 : 1;
+      if (ua !== ub) return ub - ua;
+      return b.last_message_at.localeCompare(a.last_message_at);
+    });
+    return list;
+  }, [threads, dmUnreadByThreadId]);
 
   function displayFor(id: string) {
     return profileMap.get(id)?.username ? `@${profileMap.get(id)!.username}` : id.slice(0, 8);
@@ -333,9 +404,6 @@ export function FriendsAndMessagesPanel({
       await startDmWithUser(row.user_id);
       setFriendSearch('');
       setSuggestions([]);
-    } catch {
-      setToast('Could not start chat.');
-      window.setTimeout(() => setToast(null), 2600);
     } finally {
       setResolveBusy(false);
     }
@@ -347,30 +415,35 @@ export function FriendsAndMessagesPanel({
       window.setTimeout(() => setToast(null), 2400);
       return;
     }
-    try {
-      await startDmWithUser(row.user_id);
-      setFriendSearch('');
-      setSuggestions([]);
-    } catch {
-      setToast('Could not start chat.');
-      window.setTimeout(() => setToast(null), 2600);
-    }
+    await startDmWithUser(row.user_id);
+    setFriendSearch('');
+    setSuggestions([]);
   }
 
   async function openThread(thread: DirectMessageThread) {
+    setMessageSendError(null);
+    patchDmThreadUnread(thread.id, 0);
     setActiveThread(thread);
     activeThreadIdRef.current = thread.id;
     await guardedLoadMessages(thread.id);
-    await refresh();
+    await reloadDmUnreadCounts();
   }
 
   async function handleSendComposer() {
-    if (!activeThread || !composer.trim()) return;
+    if (!activeThread || !composer.trim() || messageSending) return;
     const threadId = activeThread.id;
-    await sendThreadMessage(threadId, userId, composer);
-    setComposer('');
-    await guardedLoadMessages(threadId);
-    await refresh();
+    setMessageSendError(null);
+    setMessageSending(true);
+    try {
+      await sendThreadMessage(threadId, userId, composer);
+      setComposer('');
+      await guardedLoadMessages(threadId);
+      await refresh();
+    } catch (err) {
+      setMessageSendError(err instanceof Error ? err.message : 'Could not send message.');
+    } finally {
+      setMessageSending(false);
+    }
   }
 
   async function handleSendImageFile(file: File) {
@@ -415,81 +488,113 @@ export function FriendsAndMessagesPanel({
       return;
     }
     const uniq = [...new Set([userId, ...resolved])];
-    const thread = await createDmThread(uniq);
-    setNewChatOpen(false);
-    setNewChatQuery('');
-    setExtraParticipants([]);
-    await openThread(thread);
-    setTab('chats');
+    try {
+      const thread = await createDmThread(uniq);
+      setNewChatOpen(false);
+      setNewChatQuery('');
+      setExtraParticipants([]);
+      await openThread(thread);
+      setTab('chats');
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Could not start conversation.');
+      window.setTimeout(() => setToast(null), 3400);
+    }
   }
 
   if (activeThread) {
+    const chatPeerIds = activeThread.participant_ids.filter((p) => p !== userId);
+    const primaryPeerId = chatPeerIds[0];
+
     return (
-      <section className="mb-10">
-        <div className="flex items-center justify-between mb-3">
+      <section className={cx('flex w-full flex-col', activeThread ? 'min-h-[calc(100dvh-10.25rem)]' : '', className)}>
+        <header className="flex shrink-0 items-center gap-3 pb-3 pt-1">
           <button
             type="button"
-            onClick={() => setActiveThread(null)}
-            className="flex items-center gap-1.5 text-sm font-black text-[#2f5fc4]"
+            onClick={() => {
+              setMessageSendError(null);
+              setActiveThread(null);
+            }}
+            className="flex shrink-0 items-center gap-1 text-sm font-black text-[#2f5fc4]"
           >
-            <ChevronLeft className="w-4 h-4" aria-hidden /> Back
+            <ChevronLeft className="h-5 w-5" aria-hidden /> Back
           </button>
-          <span className="text-sm font-black text-[#1a1a1a] truncate max-w-[12rem]" title={threadTitle(activeThread)}>
-            {threadTitle(activeThread)}
-          </span>
-        </div>
+          {primaryPeerId ? (
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <Avatar {...avatarProps(primaryPeerId)} size="sm" />
+              <div className="min-w-0">
+                <p className="truncate text-base font-black text-[#1a1a1a]" title={threadTitle(activeThread)}>
+                  {chatPeerIds.length > 1 ? threadTitle(activeThread) : displayFor(primaryPeerId)}
+                </p>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#9ca3af]">
+                  {chatPeerIds.length > 1 ? `${chatPeerIds.length + 1} people` : 'Direct message'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <span className="truncate font-black text-[#1a1a1a]" title={threadTitle(activeThread)}>
+              {threadTitle(activeThread)}
+            </span>
+          )}
+        </header>
 
-        <div className="bg-white rounded-[24px] border border-[#e5e7eb] shadow-[0_12px_32px_rgba(47,95,196,0.08)] flex flex-col min-h-[340px] max-h-[min(560px,calc(100vh-240px))]">
-          <div className="px-4 py-3 border-b border-[#f3f4f6] flex items-center gap-2">
-            {activeThread.participant_ids
-              .filter(p => p !== userId)
-              .slice(0, 5)
-              .map(pid => (
-                <Avatar key={pid} {...avatarProps(pid)} size="sm" />
-              ))}
-          </div>
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 bg-[#faf9f5]">
-            {messages.map(m => {
-              const mine = m.sender_id === userId;
-              return (
-                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={[
-                      'max-w-[82%] rounded-2xl px-3 py-2 text-sm leading-relaxed',
-                      mine
-                        ? 'bg-[#2f5fc4] text-white rounded-br-md'
-                        : 'bg-white text-[#1a1a1a] border border-[#e5e7eb] rounded-bl-md',
-                    ].join(' ')}
-                  >
-                    {!mine && (
-                      <p className="text-[10px] font-bold text-[#6f90d8] mb-0.5">{displayFor(m.sender_id)}</p>
-                    )}
-                    {m.message_type === 'image' && m.image_url ? (
-                      <a href={m.image_url} target="_blank" rel="noopener noreferrer">
-                        <img
-                          src={m.image_url}
-                          alt="Shared in chat"
-                          className="mt-1 max-h-56 w-auto max-w-full rounded-xl border border-black/10"
-                          loading="lazy"
-                        />
-                      </a>
-                    ) : (
-                      m.body
-                    )}
-                    <p className={`mt-1 text-[10px] ${mine ? 'text-white/75' : 'text-[#9ca3af]'}`}>
-                      {timeAgo(m.created_at)}
-                    </p>
+        <div
+          className={cx(
+            'flex min-h-0 flex-1 flex-col overflow-hidden rounded-[24px] border border-[#e5e7eb]',
+            'bg-white shadow-[0_12px_32px_rgba(47,95,196,0.08)]',
+            'sm:max-h-none',
+          )}
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#faf9f5] px-4 py-3">
+            <div className="space-y-2">
+              {messages.map((m) => {
+                const mine = m.sender_id === userId;
+                return (
+                  <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={cx(
+                        'max-w-[min(85%,420px)] rounded-2xl px-3 py-2 text-sm leading-relaxed',
+                        mine
+                          ? 'rounded-br-md bg-[#2f5fc4] text-white shadow-sm'
+                          : 'rounded-bl-md border border-[#e5e7eb] bg-white text-[#1a1a1a]',
+                      )}
+                    >
+                      {!mine && (
+                        <p className="mb-0.5 text-[10px] font-bold text-[#6f90d8]">{displayFor(m.sender_id)}</p>
+                      )}
+                      {m.message_type === 'image' && m.image_url ? (
+                        <a href={m.image_url} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={m.image_url}
+                            alt="Shared in chat"
+                            className="mt-1 max-h-56 w-auto max-w-full rounded-xl border border-black/10"
+                            loading="lazy"
+                          />
+                        </a>
+                      ) : (
+                        <span className="whitespace-pre-wrap break-words">{m.body}</span>
+                      )}
+                      <p className={`mt-1 text-[10px] ${mine ? 'text-white/75' : 'text-[#9ca3af]'}`}>
+                        {timeAgo(m.created_at)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-            {messages.length === 0 && (
-              <p className="text-sm text-[#9ca3af] text-center py-8">
-                Say hi 👋 Shared food discoveries start here.
+                );
+              })}
+              {messages.length === 0 && (
+                <p className="py-10 text-center text-sm text-[#9ca3af]">
+                  Say hi 👋 Shared food discoveries start here.
+                </p>
+              )}
+              <div ref={messagesEndRef} aria-hidden className="h-px w-full shrink-0" />
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-[#f3f4f6] bg-white px-3 py-2.5 sm:rounded-b-[24px]">
+            {messageSendError && (
+              <p className="mb-2 rounded-xl border border-[#fecaca] bg-[#fef2f2] px-3 py-1.5 text-xs font-semibold text-[#b91c1c]">
+                {messageSendError}
               </p>
             )}
-          </div>
-          <div className="p-3 border-t border-[#f3f4f6] flex gap-2 bg-white rounded-b-[24px]">
             <input
               ref={imageInputRef}
               type="file"
@@ -502,32 +607,51 @@ export function FriendsAndMessagesPanel({
                 void handleSendImageFile(file);
               }}
             />
-            <button
-              type="button"
-              onClick={() => imageInputRef.current?.click()}
-              disabled={sendingImage}
-              className="w-11 h-11 rounded-full border border-[#e5e7eb] text-[#2f5fc4] flex items-center justify-center shrink-0 disabled:opacity-40"
-              aria-label="Send image"
-              title="Send image"
-            >
-              {sendingImage ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <ImagePlus className="w-4 h-4" aria-hidden />}
-            </button>
-            <input
-              value={composer}
-              onChange={e => setComposer(e.target.value)}
-              placeholder="Message…"
-              className="flex-1 rounded-full border border-[#e5e7eb] px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[#2f5fc4]/25"
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSendComposer(); } }}
-            />
-            <button
-              type="button"
-              onClick={() => void handleSendComposer()}
-              disabled={!composer.trim() || sendingImage}
-              className="w-11 h-11 rounded-full bg-[#2f5fc4] text-white flex items-center justify-center shrink-0 disabled:opacity-40"
-              aria-label="Send message"
-            >
-              <Send className="w-4 h-4" aria-hidden />
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={sendingImage || messageSending}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#e5e7eb] text-[#2f5fc4] disabled:opacity-40"
+                aria-label="Attach image"
+                title="Attach image"
+              >
+                {sendingImage ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <ImagePlus className="h-4 w-4" aria-hidden />}
+              </button>
+              <textarea
+                value={composer}
+                disabled={messageSending}
+                onChange={(e) => setComposer(e.target.value)}
+                placeholder={messageSending ? 'Sending…' : 'Message…'}
+                rows={1}
+                className={cx(
+                  'min-h-[44px] max-h-[120px] flex-1 resize-none rounded-[22px] border border-[#e5e7eb]',
+                  'px-4 py-2.5 text-sm leading-snug outline-none focus:ring-2 focus:ring-[#2f5fc4]/25',
+                  'disabled:bg-[#f9fafb]',
+                )}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSendComposer();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void handleSendComposer()}
+                disabled={!composer.trim() || sendingImage || messageSending}
+                className={cx(
+                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-opacity',
+                  composer.trim() && !messageSending && !sendingImage
+                    ? 'bg-[#2f5fc4]'
+                    : 'bg-[#2f5fc4]/35',
+                )}
+                aria-label="Send message"
+              >
+                {messageSending ? <Loader2 className="h-4 w-4 animate-spin text-white/90" aria-hidden /> : <Send className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
+            <p className="mt-1.5 px-1 text-[10px] font-semibold text-[#cbd5e1]">Enter to send · Shift+Enter for newline</p>
           </div>
         </div>
       </section>
@@ -535,7 +659,7 @@ export function FriendsAndMessagesPanel({
   }
 
   return (
-    <section className="mb-10">
+    <section className={cx('mb-10 flex w-full flex-col', className)}>
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
           <h2 className="text-xl font-black text-[#2f5fc4] tracking-tight">Friends & messages</h2>
@@ -711,14 +835,30 @@ export function FriendsAndMessagesPanel({
                         </button>
                         <button
                           type="button"
-                          onClick={async () => { await respondToFriendRequest(r.id, false); await refresh(); }}
+                          onClick={() => void (async () => {
+                            const res = await respondToFriendRequest(r.id, false);
+                            if (!res.ok) {
+                              setToast(res.error ?? 'Could not decline invitation.');
+                              window.setTimeout(() => setToast(null), 2600);
+                              return;
+                            }
+                            await refresh();
+                          })()}
                           className="rounded-full px-2.5 py-1 text-xs font-bold border border-[#e5e7eb] text-[#6b7280]"
                         >
                           Decline
                         </button>
                         <button
                           type="button"
-                          onClick={async () => { await respondToFriendRequest(r.id, true); await refresh(); }}
+                          onClick={() => void (async () => {
+                            const res = await respondToFriendRequest(r.id, true);
+                            if (!res.ok) {
+                              setToast(res.error ?? 'Could not accept invitation.');
+                              window.setTimeout(() => setToast(null), 2600);
+                              return;
+                            }
+                            await refresh();
+                          })()}
                           className="rounded-full px-2.5 py-1 text-xs font-black bg-[#2f5fc4] text-white inline-flex items-center gap-1"
                         >
                           <Check className="w-3 h-3 shrink-0" aria-hidden /> Accept
@@ -802,32 +942,71 @@ export function FriendsAndMessagesPanel({
           </div>
         </div>
       ) : (
-        <div className="bg-white rounded-[24px] border border-[#e5e7eb] shadow-[0_10px_28px_rgba(47,95,196,0.06)] overflow-hidden">
+        <div className="flex w-full flex-col rounded-[24px] border border-[#e5e7eb] bg-white shadow-[0_10px_28px_rgba(47,95,196,0.06)] overflow-hidden">
           {threads.length === 0 ? (
             <div className="px-5 py-10 text-center text-sm text-[#9ca3af]">
               No conversations yet · start something delicious with <span className="font-semibold text-[#2f5fc4]">New chat</span>.
             </div>
           ) : (
             <ul className="divide-y divide-[#f3f4f6]">
-              {threads.map(t => (
-                <li key={t.id}>
-                  <button
-                    type="button"
-                    onClick={() => void openThread(t)}
-                    className="w-full px-4 py-3 flex items-start gap-3 hover:bg-[#fafbff]"
-                  >
-                    <div className="flex -space-x-2 pt-0.5 shrink-0">
-                      {t.participant_ids.filter(p => p !== userId).slice(0, 3).map(pid => (
-                        <Avatar key={pid} {...avatarProps(pid)} size="xs" />
-                      ))}
-                    </div>
-                    <div className="flex-1 min-w-0 text-left">
-                      <p className="text-sm font-black text-[#1a1a1a] leading-tight truncate">{threadTitle(t)}</p>
-                      <p className="text-[10px] text-[#9ca3af] font-semibold mt-0.5">{timeAgo(t.last_message_at)}</p>
-                    </div>
-                  </button>
-                </li>
-              ))}
+              {sortedThreads.map((t) => {
+                const uCount = dmUnreadByThreadId[t.id] ?? 0;
+                const unread = uCount > 0;
+                const badgeLabel = uCount > 99 ? '99+' : String(uCount);
+                return (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => void openThread(t)}
+                      className={cx(
+                        'flex w-full items-start gap-3 px-4 py-3 text-left',
+                        unread ? 'bg-[#fff5f9]/80 hover:bg-[#fff0f4]' : 'hover:bg-[#fafbff]',
+                      )}
+                      aria-label={
+                        unread
+                          ? `${threadTitle(t)}, ${badgeLabel} unread`
+                          : `Open conversation with ${threadTitle(t)}`
+                      }
+                    >
+                      <div className="flex shrink-0 -space-x-2 pt-0.5">
+                        {t.participant_ids.filter((p) => p !== userId).slice(0, 3).map((pid) => (
+                          <Avatar key={pid} {...avatarProps(pid)} size="xs" />
+                        ))}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <p
+                            className={cx(
+                              'truncate text-sm leading-tight text-[#1a1a1a]',
+                              unread ? 'font-black' : 'font-bold',
+                            )}
+                          >
+                            {threadTitle(t)}
+                          </p>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            {unread ? (
+                              <span className="flex min-h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#ff4f73] px-1 text-[9px] font-black tabular-nums leading-none text-white shadow-sm ring-2 ring-white">
+                                {badgeLabel}
+                              </span>
+                            ) : null}
+                            <span className="text-[10px] font-semibold text-[#9ca3af]">
+                              {timeAgo(threadPreviewById[t.id]?.at ?? t.last_message_at)}
+                            </span>
+                          </div>
+                        </div>
+                        <p
+                          className={cx(
+                            'mt-1 line-clamp-2 text-xs text-[#6b7280]',
+                            unread ? 'font-bold text-[#1a1a1a]' : 'font-medium',
+                          )}
+                        >
+                          {threadPreviewById[t.id]?.preview || 'Say hi 👋 · no messages yet'}
+                        </p>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

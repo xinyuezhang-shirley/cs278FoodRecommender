@@ -40,22 +40,9 @@ export function PageLoader({ compact = false, label = 'Finding better flavors fo
         }
         decoding="async"
       />
-      <div className="mt-2 flex items-center gap-2">
-        <span className="w-2.5 h-2.5 rounded-full bg-[#2f5fc4] nommi-pulse-dot" />
-        <span className="w-2 h-2 rounded-full bg-[#9fb9ef] nommi-pulse-dot [animation-delay:140ms]" />
-        <span className="w-2.5 h-2.5 rounded-full bg-[#2f5fc4] nommi-pulse-dot [animation-delay:280ms]" />
-      </div>
       {!compact && (
-        <p className="mt-2 text-xs font-bold text-[#6f90d8] tracking-wide">{label}</p>
+        <p className="mt-3 text-xs font-bold text-[#6f90d8] tracking-wide">{label}</p>
       )}
-      <div className="mt-3 w-10 h-10 rounded-full border border-[#d7e3fb] bg-white/90 shadow-[0_8px_20px_rgba(47,95,196,0.16)] flex items-center justify-center nommi-orbit-ring">
-        <img
-          src="/graphics/nommi-logo.png"
-          alt=""
-          className="w-5 h-5 object-contain opacity-90"
-          aria-hidden
-        />
-      </div>
     </div>
   );
 }

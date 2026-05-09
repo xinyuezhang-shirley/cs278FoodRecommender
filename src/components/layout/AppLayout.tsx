@@ -6,6 +6,8 @@ import { PageLoader } from '../ui/LoadingSpinner';
 import { Modal } from '../ui/Modal';
 import { CreatePostForm } from '../posts/CreatePostForm';
 import { LogoPatternBackground } from '../ui/LogoPatternBackground';
+import { NommiFilterProvider } from '../../context/NommiFilterProvider';
+import { ChatUnreadProvider } from '../../context/ChatUnreadContext';
 
 export function AppLayout() {
   const { user, loading } = useAuth();
@@ -15,13 +17,14 @@ export function AppLayout() {
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const lastSwipeAtRef = useRef(0);
 
-  const TAB_ORDER = ['/app/map', '/app/feed', '/app/community', '/app/profile'] as const;
+  const TAB_ORDER = ['/app/map', '/app/feed', '/app/community', '/app/chat', '/app/profile'] as const;
 
   function currentTabIndex(path: string): number {
     if (path.startsWith('/app/map')) return 0;
     if (path.startsWith('/app/feed')) return 1;
     if (path.startsWith('/app/community')) return 2;
-    if (path.startsWith('/app/profile')) return 3;
+    if (path.startsWith('/app/chat')) return 3;
+    if (path.startsWith('/app/profile')) return 4;
     return -1;
   }
 
@@ -73,27 +76,37 @@ export function AppLayout() {
   }
 
   return (
-    <div
-      className="nommi-app-shell relative isolate bg-[#faf9f5] max-w-lg mx-auto w-full flex flex-col overflow-x-hidden overflow-y-visible"
-      style={{ height: '100dvh' }}
-    >
-      <LogoPatternBackground />
-      <main className="relative z-[1] flex-1 min-h-0 overflow-y-auto" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <div key={pathname} className="nommi-route-enter min-h-full">
-          <Outlet />
+    <ChatUnreadProvider userId={user.id}>
+      <div
+        className="nommi-app-shell relative isolate mx-auto flex w-full max-w-lg min-h-dvh flex-col overflow-x-hidden bg-[#faf9f5]"
+      >
+        <LogoPatternBackground />
+        <main
+          className="relative z-[1] flex w-full min-w-0 grow flex-col"
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
+          <NommiFilterProvider>
+            <div
+              key={pathname}
+              className="nommi-route-enter flex w-full flex-col"
+            >
+              <Outlet />
+            </div>
+          </NommiFilterProvider>
+        </main>
+
+        <div className="fixed bottom-0 left-1/2 z-[50] w-full max-w-lg -translate-x-1/2">
+          <BottomNav onCreatePost={() => setShowCreate(true)} />
         </div>
-      </main>
 
-      <div className="relative z-[2]">
-        <BottomNav onCreatePost={() => setShowCreate(true)} />
+        <Modal open={showCreate} onClose={() => setShowCreate(false)} fullScreen>
+          <CreatePostForm
+            onSuccess={() => setShowCreate(false)}
+            onCancel={() => setShowCreate(false)}
+          />
+        </Modal>
       </div>
-
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} fullScreen>
-        <CreatePostForm
-          onSuccess={() => setShowCreate(false)}
-          onCancel={() => setShowCreate(false)}
-        />
-      </Modal>
-    </div>
+    </ChatUnreadProvider>
   );
 }

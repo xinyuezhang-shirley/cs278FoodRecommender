@@ -82,7 +82,7 @@ export function PostPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-full bg-[#faf9f5] pb-24">
+    <div className="flex w-full flex-col bg-[#faf9f5]">
       <PostDetail
         post={post}
         onClose={goBackSafe}

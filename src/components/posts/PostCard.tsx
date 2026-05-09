@@ -1,4 +1,5 @@
-import { Heart, MessageCircle, Clock, MapPin, CheckCircle, Bookmark, Share, Edit3, ExternalLink } from 'lucide-react';
+import type { MouseEvent, ReactNode } from 'react';
+import { Heart, MessageCircle, Clock, MapPin, CheckCircle, Bookmark, Share, Edit3, Users } from 'lucide-react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import type { Post } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -9,6 +10,9 @@ import { PostTypeBadge } from '../ui/Tag';
 const PLACEHOLDER_COLORS = [
   '#eaf1ff', '#fff3dc', '#f0f4ff', '#fefce8', '#fdeef3',
 ];
+
+/** Fixed media band height so feed cards align regardless of image aspect ratio. */
+const POST_CARD_MEDIA_HEIGHT_PX = 220;
 
 function getPlaceholderColor(postId: string): string {
   const id = typeof postId === 'string' && postId.length > 0 ? postId : '0';
@@ -30,8 +34,39 @@ interface PostCardProps {
   saved?: boolean;
   /** Staggered list entrance; omit for no animation. */
   staggerIndex?: number;
-  /** Saved/Liked lists: big “open” control + clear new-tab behavior in parent `onClick`. */
-  showProminentOpen?: boolean;
+}
+
+/** Minimal IG/Twitter-style action control */
+function SlimAction(props: {
+  label: string;
+  active?: boolean;
+  onClick: (e: MouseEvent) => void;
+  children: ReactNode;
+  accent?: 'neutral' | 'rose' | 'blue';
+}) {
+  const { label, active, onClick, children, accent = 'neutral' } = props;
+  const tone =
+    accent === 'rose' && active
+      ? 'text-rose-600'
+      : accent === 'blue' && active
+        ? 'text-[#2f5fc4]'
+        : 'text-[#64748b]';
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={accent !== 'neutral' ? active : undefined}
+      title={label}
+      onClick={onClick}
+      className={[
+        'flex min-h-[44px] min-w-[44px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5',
+        'text-[11px] font-semibold transition-colors hover:bg-black/[0.035] motion-safe:active:scale-[0.98]',
+        tone,
+      ].join(' ')}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function PostCard({
@@ -42,7 +77,6 @@ export function PostCard({
   onToggleSaved,
   saved,
   staggerIndex,
-  showProminentOpen,
 }: PostCardProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -55,17 +89,22 @@ export function PostCard({
   const returnPathCurrent = `${location.pathname}${location.search}`;
   const editHref = `/app/post/${post.id}/edit?${encodeReturnQuery(returnPathCurrent)}`;
 
+  const showActionRow = !!(onLike || onToggleSaved || onShareToCircle || onClick);
+
   const main = (
     <>
       <div
-        className="w-full overflow-hidden rounded-t-[26px]"
-        style={{ backgroundColor: getPlaceholderColor(post.id) }}
+        className="w-full overflow-hidden rounded-t-[26px] relative shrink-0"
+        style={{
+          height: POST_CARD_MEDIA_HEIGHT_PX,
+          backgroundColor: getPlaceholderColor(post.id),
+        }}
       >
         {post.image_url ? (
           isVideoUrl(post.image_url) ? (
             <video
               src={post.image_url}
-              className="w-full object-cover"
+              className="w-full h-full object-cover"
               controls
               preload="metadata"
             />
@@ -73,16 +112,16 @@ export function PostCard({
             <img
               src={post.image_url}
               alt={post.title}
-              className="w-full object-cover"
+              className="w-full h-full object-cover"
               loading="lazy"
               style={{ display: 'block' }}
               onError={e => {
-                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).style.display = 'none';
               }}
             />
           )
         ) : (
-          <div className="w-full h-28 flex items-center justify-center text-4xl opacity-70">
+          <div className="w-full h-full flex items-center justify-center text-4xl opacity-70">
             {post.type === 'free_food' ? '🍕' : post.type === 'event' ? '🎉' : '🧋'}
           </div>
         )}
@@ -131,22 +170,22 @@ export function PostCard({
           </p>
         )}
 
-        <p className="text-[13px] font-bold text-[#1a1a1a] line-clamp-2 leading-snug mb-2">
-          {post.title}
-        </p>
-
-        {isOwner && (
-          <div className="mb-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <p className="text-[13px] font-bold text-[#1a1a1a] line-clamp-2 leading-snug flex-1 min-w-0 pr-1">
+            {post.title}
+          </p>
+          {isOwner && (
             <Link
               to={editHref}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2f5fc4] px-3 py-3.5 text-sm font-black text-white shadow-[0_10px_28px_rgba(47,95,196,0.38)] ring-2 ring-white/30"
+              className="shrink-0 w-9 h-9 flex items-center justify-center rounded-[10px] border border-[#e5e7eb] bg-white text-[#6b7280] shadow-[0_2px_8px_rgba(47,95,196,0.06)] hover:border-[#2f5fc4]/35 hover:text-[#2f5fc4] motion-safe:active:scale-[0.97] transition-colors"
               onClick={e => e.stopPropagation()}
+              aria-label="Edit post"
+              title="Edit post"
             >
-              <Edit3 className="w-5 h-5 shrink-0" strokeWidth={2.5} aria-hidden />
-              Edit your post
+              <Edit3 className="w-4 h-4" strokeWidth={2} aria-hidden />
             </Link>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="flex items-center gap-1 text-[11px] text-[#6b7280] mb-2">
           <MapPin className="w-2.5 h-2.5 flex-shrink-0 text-[#6f90d8]" aria-hidden />
@@ -170,44 +209,6 @@ export function PostCard({
           <div className="flex items-center gap-1 text-[11px] text-[#2f5fc4] font-bold mb-2">
             <Clock className="w-2.5 h-2.5" aria-hidden />
             {remaining}
-          </div>
-        )}
-
-        <div className="flex items-center gap-3 text-[11px] text-[#9ca3af] mb-1">
-          <span className="flex items-center gap-1">
-            <Heart className="w-3 h-3 text-[#6f90d8]" aria-hidden />
-            {post.like_count ?? 0}
-          </span>
-          <span className="flex items-center gap-1">
-            <MessageCircle className="w-3 h-3 text-[#6f90d8]" aria-hidden />
-            {post.comment_count ?? 0}
-          </span>
-          {post.is_free_food && (
-            <span className="flex items-center gap-1 text-[#2f5fc4] font-semibold">
-              <CheckCircle className="w-3 h-3" aria-hidden />
-              {post.still_there_count ?? 0}
-            </span>
-          )}
-          <span className="ml-auto text-[10px] text-[#6b7280]">{timeAgo(post.created_at)}</span>
-        </div>
-
-        {showProminentOpen && (
-          <div className="mt-3" onClick={e => e.stopPropagation()}>
-            <button
-              type="button"
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#2f5fc4] bg-[#f5f7ff] px-3 py-3.5 text-sm font-black text-[#2f5fc4] shadow-[inset_0_1px_0_rgba(255,255,255,0.95)] hover:bg-[#eaf1ff] active:scale-[0.99] transition-transform"
-              onClick={e => {
-                e.preventDefault();
-                e.stopPropagation();
-                onClick();
-              }}
-            >
-              <ExternalLink className="w-4 h-4 shrink-0" strokeWidth={2.5} aria-hidden />
-              Open full post (new tab)
-            </button>
-            <p className="mt-1.5 text-center text-[10px] font-semibold text-[#6b7280] leading-snug">
-              Or tap anywhere on the preview above
-            </p>
           </div>
         )}
       </div>
@@ -234,80 +235,103 @@ export function PostCard({
       >
         {main}
       </div>
-      {onShareToCircle && (
-        <div className="px-3 sm:px-4 pb-3 pt-2.5 border-t border-[#e5e7eb] rounded-b-[28px] bg-linear-to-b from-white to-[#faf9f5]/95">
-          <div className="flex items-stretch gap-2 flex-wrap sm:flex-nowrap">
-            {onLike && (
-              <button
-                type="button"
+
+      {showActionRow && (
+        <div
+          className="border-t border-[#eef0f5] rounded-b-[28px] bg-linear-to-b from-white to-[#fafbff]/95 px-1 pb-1"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-3 pt-1.5 pb-0.5 text-[10px] font-semibold text-[#9ca3af] tabular-nums">
+            <span>{timeAgo(post.created_at)}</span>
+            {post.is_free_food ? (
+              <span className="inline-flex items-center gap-1 text-[#6f90d8]">
+                <CheckCircle className="w-3 h-3" aria-hidden />
+                {post.still_there_count ?? 0} still here
+              </span>
+            ) : (
+              <span />
+            )}
+          </div>
+          <div className="flex items-stretch gap-0">
+            {onLike ? (
+              <SlimAction
+                label={liked ? 'Unlike' : 'Like'}
+                active={liked}
+                accent="rose"
                 onClick={e => {
                   e.preventDefault();
                   e.stopPropagation();
                   onLike();
                 }}
-                className={[
-                  'text-xs font-black rounded-full px-3 py-2 border transition-colors shrink-0 min-h-[40px]',
-                  liked
-                    ? 'border-rose-400 bg-linear-to-br from-rose-50 to-pink-50 text-rose-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] ring-2 ring-rose-200/80'
-                    : 'border-[#e5e7eb] bg-white text-[#2f5fc4] hover:bg-[#fef2f4] hover:border-rose-200 hover:text-rose-600',
-                ].join(' ')}
-                aria-pressed={liked}
               >
-                <span className="inline-flex items-center gap-1">
-                  <Heart className={['w-3 h-3', liked ? 'fill-rose-500 text-rose-600' : ''].join(' ')} aria-hidden />
-                  {liked ? 'Liked' : 'Like'}
-                </span>
-              </button>
-            )}
-            {onToggleSaved && (
-              <button
-                type="button"
+                <Heart
+                  className={[
+                    'w-[22px] h-[22px]',
+                    liked ? 'fill-rose-500 text-rose-500' : '',
+                  ].join(' ')}
+                  strokeWidth={liked ? 0 : 2}
+                  aria-hidden
+                />
+                <span>{post.like_count ?? 0}</span>
+              </SlimAction>
+            ) : null}
+            <SlimAction
+              label="Open post & comments"
+              onClick={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClick();
+              }}
+            >
+              <MessageCircle className="w-[22px] h-[22px]" strokeWidth={2} aria-hidden />
+              <span>{post.comment_count ?? 0}</span>
+            </SlimAction>
+            {onToggleSaved ? (
+              <SlimAction
+                label={saved ? 'Remove from saved' : 'Save'}
+                active={saved}
+                accent="blue"
                 onClick={e => {
                   e.preventDefault();
                   e.stopPropagation();
                   onToggleSaved();
                 }}
-                className={[
-                  'text-xs font-black rounded-full px-3 py-2 border transition-colors shrink-0 min-h-[40px]',
-                  saved
-                    ? 'border-amber-500 bg-linear-to-br from-amber-50 to-yellow-50 text-amber-900 ring-2 ring-amber-200/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]'
-                    : 'border-[#e5e7eb] bg-white text-[#2f5fc4] hover:bg-amber-50/80 hover:border-amber-200',
-                ].join(' ')}
-                aria-pressed={saved}
               >
-                <span className="inline-flex items-center gap-1">
-                  <Bookmark className={['w-3 h-3', saved ? 'fill-amber-600 text-amber-700' : ''].join(' ')} aria-hidden />
-                  {saved ? 'Saved' : 'Save'}
-                </span>
-              </button>
-            )}
-            <button
-              type="button"
+                <Bookmark
+                  className={[
+                    'w-[22px] h-[22px]',
+                    saved ? 'fill-[#2f5fc4] text-[#2f5fc4]' : '',
+                  ].join(' ')}
+                  strokeWidth={saved ? 0 : 2}
+                  aria-hidden
+                />
+                <span>{saved ? 'Saved' : 'Save'}</span>
+              </SlimAction>
+            ) : null}
+            <SlimAction
+              label="Share via other apps"
               onClick={e => {
                 e.preventDefault();
                 e.stopPropagation();
                 void sharePostExternal(post);
               }}
-              className="text-xs font-black text-[#0f766e] rounded-full px-3 py-2 border border-transparent bg-teal-50 hover:bg-teal-100 hover:border-teal-200 shrink-0 min-h-[40px]"
-              aria-label="Share to other apps"
-              title="Share via Messages, email, etc."
             >
-              <span className="inline-flex items-center gap-1">
-                <Share className="w-3 h-3" aria-hidden />
-                Apps
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={e => {
-                e.preventDefault();
-                e.stopPropagation();
-                onShareToCircle();
-              }}
-              className="text-xs font-black text-[#2f5fc4] underline-offset-2 hover:underline rounded-full px-3 py-2 border border-[#e5e7eb]/80 bg-white/90 hover:bg-white shrink-0 min-h-[40px]"
-            >
-              Circle
-            </button>
+              <Share className="w-[22px] h-[22px]" strokeWidth={2} aria-hidden />
+              <span>Share</span>
+            </SlimAction>
+            {onShareToCircle ? (
+              <SlimAction
+                label="Share to circle"
+                onClick={e => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onShareToCircle();
+                }}
+              >
+                <Users className="w-[22px] h-[22px]" strokeWidth={2} aria-hidden />
+                <span>Circle</span>
+              </SlimAction>
+            ) : null}
           </div>
         </div>
       )}

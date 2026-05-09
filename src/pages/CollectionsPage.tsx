@@ -170,7 +170,7 @@ export function CollectionsPage() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-28">
+    <div className="relative flex w-full flex-col bg-[#faf9f5] px-4">
       <header className="sticky top-0 z-[400] -mx-4 px-4 pt-4 pb-3 bg-[#faf9f5]/92 backdrop-blur-md border-b border-[#e5e7eb]/60">
         <div className="flex items-center gap-2 mb-3">
           <Link
@@ -227,11 +227,9 @@ export function CollectionsPage() {
             <div className="min-w-0 pt-0.5">
               <h2 className="text-sm font-black text-[#1a1a1a] tracking-tight">{activeMeta.title}</h2>
               <p className="text-[11px] text-[#6b7280] font-medium leading-snug mt-0.5">
-                {tab === 'saved'
-                  ? 'Use “Open full post” or tap the card — opens in a new tab with a Back target to this list.'
-                  : tab === 'liked'
-                    ? 'Opens each post in a new tab so the layout never clips.'
-                    : activeMeta.subtitle}
+                {tab === 'saved' || tab === 'liked'
+                  ? 'Tap a post preview or the comment row — opens full post in a new tab with return back to this list.'
+                  : activeMeta.subtitle}
               </p>
             </div>
           </div>
@@ -239,7 +237,6 @@ export function CollectionsPage() {
             <PostGrid
               posts={activePosts}
               loading={loading}
-              showProminentOpen
               onPostClick={openPost}
               onSharePost={user?.id ? p => setShareTarget(p) : undefined}
               onLikePost={user?.id ? handleCollectionLike : undefined}

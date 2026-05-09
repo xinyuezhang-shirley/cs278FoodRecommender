@@ -9,20 +9,19 @@ import { PostGrid } from '../components/posts/PostGrid';
 import { PostDetail } from '../components/posts/PostDetail';
 import { Modal } from '../components/ui/Modal';
 import { ShareToCircleModal } from '../components/community/ShareToCircleModal';
-import { CuisineChipRow } from '../components/map/CuisineChipRow';
-import { DietaryFilterDropdown } from '../components/map/DietaryFilterDropdown';
-import { DistanceFilterDropdown } from '../components/map/DistanceFilterDropdown';
-import { OpenNowDropdown } from '../components/map/OpenNowDropdown';
-import { RatingDropdown } from '../components/map/RatingDropdown';
-import { SortByDropdown } from '../components/map/SortByDropdown';
-import { QuickPostFilterToggles } from '../components/map/QuickPostFilterToggles';
+import { FoodCategorySheet } from '../components/feed/FoodCategorySheet';
+import { FeedAdvancedFiltersSheet } from '../components/feed/FeedAdvancedFiltersSheet';
+import { FeedPrimaryFilterRow } from '../components/feed/FeedPrimaryFilterRow';
+import { FeedActiveFilterChips } from '../components/feed/FeedActiveFilterChips';
+import { FeedCompactSortButton } from '../components/feed/FeedCompactSortButton';
 import { useGeolocation } from '../hooks/useGeolocation';
-import { useMapFilters } from '../hooks/useMapFilters';
+import { useNommiFilters, useNommiFilteredPosts } from '../hooks/useNommiFilters';
 import emptyNoPostsYetTagline from '../assets/nommi/empty_no_posts_yet_tagline.png';
 import emptyNoPostFound from '../assets/nommi/empty_no_post_found.png';
 import emptyNoResultsSideways from '../assets/nommi/empty_no_results_sideways.png';
 import { getPostIntentsForUser, togglePostIntent } from '../services/interactionService';
 import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
+import { countActiveNommiFilters } from '../utils/filterPostsWithMapFilters';
 
 export function FeedPage() {
   const { user } = useAuth();
@@ -33,17 +32,61 @@ export function FeedPage() {
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+  const [foodCatOpen, setFoodCatOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const loadSeqRef = useRef(0);
 
   const { request: requestLocation, userLocation } = useGeolocation();
 
   const {
     filters,
-    setSearch, setCuisine, setDietary, setDistance,
-    setOpenNow, setRating, setSortBy, setPhotosOnly, setCampusOnly,
-    activeFilterCount,
-    filteredPosts,
-  } = useMapFilters(allPosts, userLocation);
+    setSearch,
+    setPostKind,
+    setFoodCategories,
+    setDietary,
+    setDistance,
+    setOpenNow,
+    setRating,
+    setSortBy,
+    setPhotosOnly,
+    setCampusOnly,
+    patchAdvancedFilters,
+    resetAdvancedFilters,
+  } = useNommiFilters();
+  const filteredPosts = useNommiFilteredPosts(allPosts, userLocation);
+
+  const activeFilterCount = useMemo(
+    () => countActiveNommiFilters(filters, userLocation ?? null),
+    [filters, userLocation],
+  );
+
+  const supportsOpenNow = useMemo(
+    () => allPosts.some(p => typeof p.mock_is_open === 'boolean'),
+    [allPosts],
+  );
+  const supportsRating = useMemo(
+    () => allPosts.some(p => typeof p.mock_rating === 'number'),
+    [allPosts],
+  );
+
+  /** Advanced badge: ignore distance unless location is active (otherwise it does nothing). */
+  const advancedFilterCount = useMemo(() => {
+    let n = filters.dietary.length;
+    if (filters.distance && userLocation) n++;
+    if (filters.openNow) n++;
+    if (filters.rating) n++;
+    if (filters.photosOnly) n++;
+    if (filters.campusOnly) n++;
+    return n;
+  }, [
+    filters.campusOnly,
+    filters.dietary,
+    filters.distance,
+    filters.openNow,
+    filters.photosOnly,
+    filters.rating,
+    userLocation,
+  ]);
 
   const loadPosts = useCallback(async (silent?: boolean) => {
     const reqSeq = ++loadSeqRef.current;
@@ -69,6 +112,7 @@ export function FeedPage() {
       if (!silent && reqSeq === loadSeqRef.current) setLoading(false);
     }
   }, [user?.id]);
+
   async function handleLikeFromFeed(post: Post) {
     if (!user?.id) return;
     const vr = post.viewer_reactions ?? [];
@@ -107,7 +151,6 @@ export function FeedPage() {
       });
     }
   }
-
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
 
@@ -159,12 +202,11 @@ export function FeedPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
+    <div className="flex w-full flex-col bg-[#faf9f5] px-4">
 
-      {/* ── Sticky header ── */}
-      <div className="sticky top-0 z-[500] bg-white/80 backdrop-blur-md px-4 pt-4 pb-3 space-y-3 border-b border-[#e5e7eb]/60">
+      <div className="sticky top-0 z-[500] bg-white/82 backdrop-blur-md px-4 pt-4 pb-3 space-y-2.5 border-b border-[#e5e7eb]/55">
         <div className="mb-1 flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="brand text-3xl font-black text-[#2f5fc4] tracking-wide">Food feed</h1>
             <p className="text-sm text-[#6b7280]">See what people are sharing around campus.</p>
           </div>
@@ -195,40 +237,65 @@ export function FeedPage() {
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             placeholder="Search food, places…"
-            className="w-full pl-10 pr-9 py-2.5 bg-white border border-[#e5e7eb] rounded-full text-sm text-[#1a1a1a] placeholder-[#9ca3af] outline-none focus:ring-2 focus:ring-[#2f5fc4]/20 focus:border-[#2f5fc4] shadow-[0_4px_16px_rgba(47,95,196,0.08)]"
+            className="w-full pl-10 pr-9 py-2.5 bg-white border border-[#e5e7eb] rounded-full text-sm text-[#1a1a1a] placeholder-[#9ca3af] outline-none focus:ring-2 focus:ring-[#2f5fc4]/20 focus:border-[#2f5fc4] shadow-[0_4px_16px_rgba(47,95,196,0.06)] min-h-[44px]"
           />
           {searchInput && (
-            <button type="button" onClick={clearSearch}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#2f5fc4] rounded-full">
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#2f5fc4] rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label="Clear search"
+            >
               <X className="w-3.5 h-3.5" aria-hidden />
             </button>
           )}
         </form>
 
-        <CuisineChipRow active={filters.cuisine} onChange={v => { setCuisine(v); }} />
-
-        <QuickPostFilterToggles
-          photosOnly={filters.photosOnly}
-          campusOnly={filters.campusOnly}
-          onPhotosOnly={setPhotosOnly}
-          onCampusOnly={setCampusOnly}
+        <FeedPrimaryFilterRow
+          postKind={filters.post_kind}
+          onPostKind={setPostKind}
+          foodCategoryActive={filters.food_categories.length > 0}
+          foodSheetOpen={foodCatOpen}
+          onOpenFoodCategories={() => setFoodCatOpen(true)}
+          advancedFilterCount={advancedFilterCount}
+          onOpenAdvancedFilters={() => setAdvancedOpen(true)}
         />
 
-        <div className="flex gap-2 flex-wrap pb-1">
-          <DietaryFilterDropdown selected={filters.dietary} onChange={setDietary} />
-          <DistanceFilterDropdown
-            value={filters.distance}
-            onChange={setDistance}
-            hasLocation={!!userLocation}
-            onRequestLocation={requestLocation}
-          />
-          <OpenNowDropdown value={filters.openNow} onChange={setOpenNow} />
-          <RatingDropdown value={filters.rating} onChange={setRating} />
-        </div>
+        <FeedActiveFilterChips
+          filters={filters}
+          setFoodCategories={setFoodCategories}
+          setDietary={setDietary}
+          setDistance={setDistance}
+          setOpenNow={setOpenNow}
+          setRating={setRating}
+          setPhotosOnly={setPhotosOnly}
+          setCampusOnly={setCampusOnly}
+          setSortBy={setSortBy}
+        />
       </div>
 
+      <FoodCategorySheet
+        open={foodCatOpen}
+        onClose={() => setFoodCatOpen(false)}
+        posts={allPosts}
+        selected={filters.food_categories}
+        onApply={setFoodCategories}
+      />
+
+      <FeedAdvancedFiltersSheet
+        open={advancedOpen}
+        onClose={() => setAdvancedOpen(false)}
+        filters={filters}
+        hasLocation={!!userLocation}
+        supportsOpenNow={supportsOpenNow}
+        supportsRating={supportsRating}
+        onRequestLocation={requestLocation}
+        patchAdvancedFilters={patchAdvancedFilters}
+        resetAdvancedFilters={resetAdvancedFilters}
+      />
+
       {filters.search && (
-        <div className="py-2 flex items-center gap-2">
+        <div className="py-2 flex items-center gap-2 px-4">
           <span className="text-xs text-[#6b7280]">
             Results for &quot;<span className="text-[#1a1a1a] font-semibold">{filters.search}</span>&quot;
           </span>
@@ -239,21 +306,20 @@ export function FeedPage() {
       )}
 
       {error && (
-        <div className="mt-3 px-3 py-2.5 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100 flex items-center justify-between">
+        <div className="mt-3 mx-4 px-3 py-2.5 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100 flex items-center justify-between">
           <span>{error}</span>
           <button type="button" onClick={() => void loadPosts()} className="text-xs font-bold text-red-700 ml-2 underline">Retry</button>
         </div>
       )}
 
-      <div className="pt-2 pb-1 flex items-center justify-between">
-        <span className="text-xs text-[#6b7280] font-semibold">
+      <div className="pt-3 pb-2 px-4 flex items-center justify-between gap-2">
+        <p className="text-xs text-[#6b7280] font-semibold">
           {filteredPosts.length} post{filteredPosts.length !== 1 ? 's' : ''}
-          {activeFilterCount > 0 && ` · ${activeFilterCount} filter${activeFilterCount !== 1 ? 's' : ''}`}
-        </span>
-        <SortByDropdown value={filters.sortBy} onChange={setSortBy} />
+        </p>
+        <FeedCompactSortButton sortBy={filters.sortBy} onChange={setSortBy} />
       </div>
 
-      <div className="flex-1">
+      <div className="w-full px-4">
         <PostGrid
           posts={filteredPosts}
           loading={loading}

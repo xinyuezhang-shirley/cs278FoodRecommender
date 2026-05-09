@@ -62,7 +62,7 @@ export function EditPostPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-full bg-white pb-24">
+    <div className="flex w-full flex-col bg-white">
       <CreatePostForm
         editPost={post}
         onCancel={goBack}
@@ -72,6 +72,7 @@ export function EditPostPage() {
           navigate(`/app/post/${post.id}${qs}`, { replace: true });
         }}
         onPostUpdated={setPost}
+        onPostDeleted={goBack}
       />
     </div>
   );

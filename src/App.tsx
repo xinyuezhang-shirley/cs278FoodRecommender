@@ -7,6 +7,7 @@ import { FeedPage } from './pages/FeedPage';
 import { MapPage } from './pages/MapPage';
 import { CommunityPage } from './pages/CommunityPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { ChatPage } from './pages/ChatPage';
 import { CollectionsPage } from './pages/CollectionsPage';
 import { PostPage } from './pages/PostPage';
 import { EditPostPage } from './pages/EditPostPage';
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="feed" element={<FeedPage />} />
             <Route path="map" element={<MapPage />} />
             <Route path="community" element={<CommunityPage />} />
+            <Route path="chat" element={<ChatPage />} />
             <Route path="collections" element={<Navigate to="/app/collections/saved" replace />} />
             <Route path="collections/:tabKey" element={<CollectionsPage />} />
             <Route path="post/:postId/edit" element={<EditPostPage />} />

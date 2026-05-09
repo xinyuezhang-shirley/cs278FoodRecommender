@@ -31,6 +31,11 @@
   --nommi-border: var(--color-nommi-border);
   --nommi-subtle: var(--color-nommi-subtle);
   --nommi-pink: var(--color-nommi-pink);
+
+  /* Bottom tab bar — shared between BottomNav and main content inset */
+  --nommi-bottom-nav-safe-padding: max(env(safe-area-inset-bottom, 0px), 8px);
+  /* Matches BottomNav: 1px top border + 6px pt-1.5 + 60px min row + nav bottom inset */
+  --nommi-bottom-nav-spacer: calc(67px + var(--nommi-bottom-nav-safe-padding));
 }
 
 body {
@@ -137,6 +142,10 @@ body {
 }
 
 /* Shared consistency pass for cards/surfaces across pages */
+.nommi-app-shell > main {
+  padding-bottom: var(--nommi-bottom-nav-spacer);
+}
+
 .nommi-app-shell [class*='rounded-[24px]'],
 .nommi-app-shell [class*='rounded-[28px]'] {
   box-shadow: 0 10px 24px rgba(47, 95, 196, 0.1) !important;

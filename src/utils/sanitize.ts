@@ -19,7 +19,15 @@ export function sanitizeText(input: string, maxLength?: number): string {
 
 export function sanitizeTags(tags: string[]): string[] {
   return tags
-    .map(t => t.trim().toLowerCase().replace(/[^a-z0-9-\s]/g, '').slice(0, 30))
+    .map(t =>
+      t
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[^a-z0-9\s-]/gi, '')
+        .trim()
+        .slice(0, 30),
+    )
     .filter(Boolean)
     .slice(0, 10);
 }

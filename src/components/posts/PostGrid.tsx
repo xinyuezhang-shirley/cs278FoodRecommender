@@ -22,8 +22,6 @@ interface PostGridProps {
   emptyAction?: React.ReactNode;
   /** Override grid container classes (e.g. `grid gap-3 mt-0` for nested sections). */
   gridClassName?: string;
-  /** Extra “Open full post (new tab)” control on Saved/Liked-type grids). */
-  showProminentOpen?: boolean;
 }
 
 export function PostGrid({
@@ -42,7 +40,6 @@ export function PostGrid({
   emptyImageClassName,
   emptyAction,
   gridClassName,
-  showProminentOpen,
 }: PostGridProps) {
   const gridCn = gridClassName ?? 'grid gap-4 mt-3';
 
@@ -77,7 +74,6 @@ export function PostGrid({
           key={post.id}
           post={post}
           staggerIndex={i}
-          showProminentOpen={showProminentOpen}
           onClick={() => onPostClick(post)}
           onShareToCircle={onSharePost ? () => onSharePost(post) : undefined}
           onLike={onLikePost ? () => onLikePost(post) : undefined}

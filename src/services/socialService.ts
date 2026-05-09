@@ -321,18 +321,62 @@ function participantSetKey(ids: string[] | undefined): string {
   return [...new Set(ids ?? [])].sort((a, b) => (a > b ? 1 : -1)).join(',');
 }
 
+function humanizeDmThreadCreateError(err: { message?: string; code?: string } | null): string {
+  if (!err?.message && !err?.code) return 'Could not create conversation.';
+  const m = `${err.code ?? ''} ${err.message ?? ''}`.toLowerCase();
+  if (m.includes('42p01') || m.includes('does not exist')) return 'Messaging is not enabled — apply Supabase migrations (dm_threads).';
+  if (err.code === '42501' || m.includes('policy') || m.includes('permission'))
+    return 'You can’t create that chat (sign in and ensure you’re a participant).';
+  return err.message ?? 'Could not create conversation.';
+}
+
+function humanizeDmMessageError(err: { message?: string; code?: string } | null): string {
+  if (!err?.message && !err?.code) return 'Could not send message.';
+  const m = `${err.code ?? ''} ${err.message ?? ''}`.toLowerCase();
+  if (m.includes('violates foreign key') || m.includes('23503'))
+    return 'This conversation is not available anymore. Go back and open a new chat.';
+  if (err.code === '42501' || m.includes('policy') || m.includes('permission'))
+    return 'You can’t send in this thread (permissions).';
+  return err.message ?? 'Could not send message.';
+}
+
+/** Latest non-empty preview text + time per thread (single batched query). */
+export async function fetchLatestDmPreviewByThread(
+  threadIds: string[],
+): Promise<Map<string, { preview: string; at: string }>> {
+  const out = new Map<string, { preview: string; at: string }>();
+  const ids = [...new Set(threadIds.filter(Boolean))];
+  if (ids.length === 0) return out;
+
+  const cap = Math.min(800, Math.max(80, ids.length * 25));
+  const { data, error } = await supabase
+    .from('dm_messages')
+    .select('thread_id, body, message_type, created_at')
+    .in('thread_id', ids)
+    .order('created_at', { ascending: false })
+    .limit(cap);
+
+  if (error || !data?.length) return out;
+
+  for (const row of data) {
+    const tid = row.thread_id as string;
+    if (!tid || out.has(tid)) continue;
+    const mt = (row.message_type as string) ?? 'text';
+    const preview = mt === 'image' ? '📷 Photo' : String(row.body ?? '').trim().slice(0, 120);
+    const at = row.created_at as string;
+    out.set(tid, {
+      preview: preview || (mt === 'image' ? '📷 Photo' : ''),
+      at,
+    });
+  }
+
+  return out;
+}
+
 export async function createDmThread(participantIds: string[]): Promise<DirectMessageThread> {
   const normalized = sortParticipantIds(participantIds);
   const existing = await findExistingThread(normalized);
   if (existing) return existing;
-
-  const now = new Date().toISOString();
-  const localThread: DirectMessageThread = {
-    id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : generateId(),
-    participant_ids: normalized,
-    last_message_at: now,
-  };
-  writeLocal(DM_THREADS_KEY, [localThread, ...readLocal<DirectMessageThread>(DM_THREADS_KEY)]);
 
   const { data, error } = await supabase
     .from('dm_threads')
@@ -340,15 +384,23 @@ export async function createDmThread(participantIds: string[]): Promise<DirectMe
     .select('id, participant_ids, last_message_at')
     .maybeSingle();
 
-  if (!error && data) {
-    const serverThread = data as DirectMessageThread;
-    writeLocal(
-      DM_THREADS_KEY,
-      [serverThread, ...readLocal<DirectMessageThread>(DM_THREADS_KEY).filter(t => t.id !== localThread.id && !threadsSyncEqual(normalized, t))],
-    );
-    return serverThread;
+  if (error) {
+    throw new Error(humanizeDmThreadCreateError(error));
   }
-  return localThread;
+  if (!data) {
+    throw new Error('Could not create conversation.');
+  }
+  const serverThread = data as DirectMessageThread;
+  writeLocal(
+    DM_THREADS_KEY,
+    [
+      serverThread,
+      ...readLocal<DirectMessageThread>(DM_THREADS_KEY).filter(
+        t => !threadsSyncEqual(normalized, t) && t.id !== serverThread.id,
+      ),
+    ],
+  );
+  return serverThread;
 }
 
 function threadsSyncEqual(sortedIds: string[], t: DirectMessageThread): boolean {
@@ -363,40 +415,52 @@ export async function listThreadMessages(threadId: string): Promise<DirectMessag
     .order('created_at', { ascending: true });
 
   const localMsgs = readLocal<DirectMessage>(DM_MESSAGES_KEY).filter(m => m.thread_id === threadId);
-  if (error || !data?.length) return localMsgs.sort((a, b) => a.created_at.localeCompare(b.created_at));
-  const rows = (data ?? []) as DirectMessage[];
-  return rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const sortByTime = (rows: DirectMessage[]) => [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at));
+
+  if (error) {
+    return sortByTime(localMsgs);
+  }
+
+  return sortByTime((data ?? []) as DirectMessage[]);
 }
 
-export async function sendThreadMessage(threadId: string, senderId: string, body: string): Promise<void> {
+export async function sendThreadMessage(threadId: string, senderId: string, body: string): Promise<DirectMessage> {
   const text = body.trim();
-  if (!text) return;
-  const msg: DirectMessage = {
-    id: generateId(),
-    thread_id: threadId,
-    sender_id: senderId,
-    body: text,
-    message_type: 'text',
-    created_at: new Date().toISOString(),
-  };
-  writeLocal(DM_MESSAGES_KEY, [...readLocal<DirectMessage>(DM_MESSAGES_KEY), msg]);
-  const { error } = await supabase.from('dm_messages').insert({
-    thread_id: threadId,
-    sender_id: senderId,
-    body: text,
-    message_type: 'text',
-  });
-  if (error) {
-    writeLocal(
-      DM_MESSAGES_KEY,
-      readLocal<DirectMessage>(DM_MESSAGES_KEY).filter((m) => m.id !== msg.id),
-    );
-    throw new Error(error.message);
+  if (!text) {
+    throw new Error('Cannot send an empty message.');
   }
-  await supabase
+
+  const { data: inserted, error } = await supabase
+    .from('dm_messages')
+    .insert({
+      thread_id: threadId,
+      sender_id: senderId,
+      body: text,
+      message_type: 'text',
+    })
+    .select('id, thread_id, sender_id, body, message_type, image_url, created_at')
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(humanizeDmMessageError(error));
+  }
+
+  const row = inserted as DirectMessage;
+  writeLocal(
+    DM_MESSAGES_KEY,
+    [...readLocal<DirectMessage>(DM_MESSAGES_KEY).filter(m => m.id !== row.id), row],
+  );
+
+  const { error: bumpErr } = await supabase
     .from('dm_threads')
-    .update({ last_message_at: new Date().toISOString() })
+    .update({ last_message_at: row.created_at })
     .eq('id', threadId);
+
+  if (bumpErr) {
+    console.warn('Could not bump thread last_message_at (RLS?):', bumpErr);
+  }
+
+  return row;
 }
 
 export async function sendThreadImage(
@@ -421,36 +485,91 @@ export async function sendThreadImage(
   const imageUrl = pub.publicUrl;
   if (!imageUrl) throw new Error('Could not create image URL.');
 
-  const msg: DirectMessage = {
-    id: generateId(),
-    thread_id: threadId,
-    sender_id: senderId,
-    body: '',
-    message_type: 'image',
-    image_url: imageUrl,
-    created_at: new Date().toISOString(),
-  };
-  writeLocal(DM_MESSAGES_KEY, [...readLocal<DirectMessage>(DM_MESSAGES_KEY), msg]);
-  const { error: insertError } = await supabase.from('dm_messages').insert({
-    thread_id: threadId,
-    sender_id: senderId,
-    body: '',
-    message_type: 'image',
-    image_url: imageUrl,
-  });
-  if (insertError) {
-    writeLocal(
-      DM_MESSAGES_KEY,
-      readLocal<DirectMessage>(DM_MESSAGES_KEY).filter((m) => m.id !== msg.id),
-    );
-    throw new Error(insertError.message);
+  const { data: inserted, error: insertError } = await supabase
+    .from('dm_messages')
+    .insert({
+      thread_id: threadId,
+      sender_id: senderId,
+      body: '',
+      message_type: 'image',
+      image_url: imageUrl,
+    })
+    .select('id, thread_id, sender_id, body, message_type, image_url, created_at')
+    .maybeSingle();
+
+  if (insertError || !inserted) {
+    throw new Error(insertError ? humanizeDmMessageError(insertError) : 'Could not save image message.');
   }
-  await supabase
+
+  const row = inserted as DirectMessage;
+  writeLocal(
+    DM_MESSAGES_KEY,
+    [...readLocal<DirectMessage>(DM_MESSAGES_KEY).filter(m => m.id !== row.id), row],
+  );
+
+  const { error: bumpErr } = await supabase
     .from('dm_threads')
-    .update({ last_message_at: new Date().toISOString() })
+    .update({ last_message_at: row.created_at })
     .eq('id', threadId);
+  if (bumpErr) {
+    console.warn('Could not bump thread last_message_at:', bumpErr);
+  }
 }
 
 export async function openOrCreateDirectThread(meId: string, otherUserId: string): Promise<DirectMessageThread> {
   return createDmThread([meId, otherUserId]);
+}
+
+export async function fetchDmUnreadCountsByThread(userId: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+
+  const { data, error } = await supabase.rpc('get_dm_unread_counts', { p_user_id: userId });
+  if (error) {
+    console.warn('[get_dm_unread_counts]', error.code, error.message);
+    return out;
+  }
+
+  for (const raw of data ?? []) {
+    const row = raw as { thread_id?: string; unread_count?: number | string };
+    const tid = row.thread_id;
+    if (!tid) continue;
+    const n = typeof row.unread_count === 'string' ? Number(row.unread_count) : Number(row.unread_count);
+    const count = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    out.set(tid, count);
+  }
+  return out;
+}
+
+export async function markDmThreadRead(
+  viewerId: string,
+  threadId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const uid = viewerId.trim();
+  const tid = threadId.trim();
+  if (!uid || !tid) return { ok: false, error: 'Invalid conversation.' };
+
+  const { data: maxRow } = await supabase
+    .from('dm_messages')
+    .select('created_at')
+    .eq('thread_id', tid)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const lastRead = typeof maxRow?.created_at === 'string'
+    ? maxRow.created_at
+    : new Date().toISOString();
+
+  const { error } = await supabase.from('dm_thread_reads').upsert(
+    { thread_id: tid, user_id: uid, last_read_at: lastRead },
+    { onConflict: 'thread_id,user_id' },
+  );
+
+  if (error) {
+    const m = `${error.code ?? ''} ${error.message ?? ''}`;
+    const missing = /does not exist|schema cache|PGRST205|42p01/i.test(m);
+    if (!missing) console.warn('markDmThreadRead:', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
 }

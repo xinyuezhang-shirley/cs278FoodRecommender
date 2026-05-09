@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { CircleActivityItem, FoodCircle, UserProfile } from '../types';
 import {
   getAllCircles,
@@ -17,14 +17,11 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { timeAgo } from '../utils/helpers';
 import { PostTypeBadge } from '../components/ui/Tag';
 import emptyNoPostsYetSimple from '../assets/nommi/empty_no_posts_yet_simple.png';
-import { FriendsAndMessagesPanel } from '../components/community/FriendsAndMessagesPanel';
 import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
 
 export function CommunityPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const dmBootstrap = searchParams.get('dm')?.trim() || undefined;
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [circles, setCircles] = useState<FoodCircle[]>([]);
   const [activity, setActivity] = useState<CircleActivityItem[]>([]);
   const [topContributors, setTopContributors] = useState<{ profile: UserProfile; post_count: number }[]>([]);
@@ -81,17 +78,6 @@ export function CommunityPage() {
     },
   });
 
-  const clearDmBootstrap = useCallback(() => {
-    setSearchParams(
-      prev => {
-        const next = new URLSearchParams(prev);
-        next.delete('dm');
-        return next;
-      },
-      { replace: true },
-    );
-  }, [setSearchParams]);
-
   const joinedCircles = circles.filter(c => c.is_member);
   const discoverCircles = circles.filter(c => !c.is_member);
 
@@ -132,7 +118,7 @@ export function CommunityPage() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-full bg-[#faf9f5] px-4 pb-24">
+    <div className="relative flex w-full flex-col bg-[#faf9f5] px-4">
 
       <div className="relative z-[1] pt-4 pb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -151,15 +137,6 @@ export function CommunityPage() {
           </button>
         )}
       </div>
-
-      {user && (
-        <FriendsAndMessagesPanel
-          userId={user.id}
-          myUsernameHint={profile?.username}
-          bootstrapDmWithUserId={dmBootstrap}
-          onBootstrapDmConsumed={clearDmBootstrap}
-        />
-      )}
 
       <section className="relative z-[1] mb-8">
         <h2 className="text-lg font-black text-[#2f5fc4] mb-1 tracking-tight">Your circles</h2>

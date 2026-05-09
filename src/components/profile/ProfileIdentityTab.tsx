@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { FoodCircle, Post } from '../../types';
 import {
-  buildMilestones,
   buildTasteChips,
   campusFoodHabits,
   dietarySignalsFromPosts,
@@ -26,7 +25,6 @@ const EXAMPLE_DIETARY = [
 interface ProfileIdentityTabProps {
   posts: Post[];
   freeFoodCount: number;
-  circleCount: number;
   circles: FoodCircle[];
   joiningCircleId: string | null;
   onJoinCircle: (circleId: string) => Promise<void>;
@@ -35,7 +33,6 @@ interface ProfileIdentityTabProps {
 export function ProfileIdentityTab({
   posts,
   freeFoodCount,
-  circleCount,
   circles,
   joiningCircleId,
   onJoinCircle,
@@ -44,7 +41,6 @@ export function ProfileIdentityTab({
   const habitTiles = campusFoodHabits(posts, freeFoodCount).slice(0, 4);
   const dietaryNotes = dietarySignalsFromPosts(posts);
   const suggested = suggestCirclesForUser(posts, circles);
-  const milestones = buildMilestones(posts, freeFoodCount, circleCount);
 
   return (
     <div className="space-y-4 pb-6">
@@ -206,32 +202,6 @@ export function ProfileIdentityTab({
             ))}
           </ul>
         )}
-      </section>
-
-      {/* 5 — Food milestones */}
-      <section className={CARD} aria-labelledby="milestone-heading">
-        <h3 id="milestone-heading" className={TITLE}>
-          Food milestones
-        </h3>
-        <p className="text-sm text-[#6b7280] mt-1 mb-4">Celebrate real actions on Nommi.</p>
-        <ul className="space-y-3">
-          {milestones.map(m => (
-            <li
-              key={m.id}
-              className={`rounded-2xl border border-[#e5e7eb] p-4 transition-opacity ${m.unlocked ? 'bg-[#f5f7ff]' : 'bg-white opacity-80'}`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className={`font-black text-[#2f5fc4] ${m.unlocked ? '' : 'text-[#9ca3af]'}`}>{m.title}</p>
-                {m.unlocked ? (
-                  <span className="text-xs font-black text-[#2f5fc4] shrink-0">Unlocked ✓</span>
-                ) : (
-                  <span className="text-xs font-bold text-[#6b7280] shrink-0">Locked</span>
-                )}
-              </div>
-              <p className="text-sm text-[#6b7280] mt-1">{m.detail}</p>
-            </li>
-          ))}
-        </ul>
       </section>
     </div>
   );

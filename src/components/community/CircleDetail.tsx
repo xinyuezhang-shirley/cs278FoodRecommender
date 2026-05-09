@@ -98,7 +98,7 @@ export function CircleDetail({
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-[#faf9f5]">
+    <div className="flex w-full flex-col min-h-dvh bg-[#faf9f5]">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-[#e5e7eb] bg-white/85 backdrop-blur-md sticky top-0 z-10 shadow-[0_6px_20px_rgba(47,95,196,0.06)]">
         <button
           type="button"
@@ -128,7 +128,7 @@ export function CircleDetail({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-24">
+      <div className="w-full">
         <div className="px-4 py-5">
           <div className="bg-white rounded-[28px] border border-[#e5e7eb] shadow-[0_12px_32px_rgba(47,95,196,0.10)] p-4 mb-4">
             <div className="flex items-center gap-3 mb-3">
