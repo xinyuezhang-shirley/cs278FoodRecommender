@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { profileLiteFromRow } from './profileHelpers';
 import { enrichPosts } from './postService';
 import { SEED_CIRCLES, SEED_MEMBERSHIPS, SEED_POSTS, SEED_PROFILES } from './mockData';
+import { isPostOwner } from '../utils/helpers';
 
 function enrichCircle(
   circle: FoodCircle,
@@ -398,22 +399,43 @@ export async function getActivityInJoinedCircles(
   }
 }
 
-/** Original post authors weighted by appearances in circles the user belongs to. */
-export async function getTopContributorsInMyCircles(userId: string, limit = 5) {
+/** Rank original post authors by how often their posts appear in circle shares (each share row counts). */
+export type ContributorTimeWindow = 'all_time' | 'this_week';
+
+export async function getTopContributorsInMyCircles(
+  userId: string,
+  limit = 5,
+  window: ContributorTimeWindow = 'all_time',
+) {
   const { data: mems } = await supabase.from('circle_memberships').select('circle_id').eq('user_id', userId);
   const cids = [...new Set((mems ?? []).map(m => m.circle_id as string))];
   if (cids.length === 0) return [];
 
-  const { data: links } = await supabase.from('circle_posts').select('post_id').in('circle_id', cids);
-  const postIds = [...new Set((links ?? []).map(l => l.post_id as string))];
-  if (postIds.length === 0) return [];
+  let linksQuery = supabase
+    .from('circle_posts')
+    .select('post_id, created_at')
+    .in('circle_id', cids);
 
-  const { data: postsRows, error } = await supabase.from('posts').select('author_id').in('id', postIds);
+  if (window === 'this_week') {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    linksQuery = linksQuery.gte('created_at', since);
+  }
+
+  const { data: links, error: lErr } = await linksQuery;
+  if (lErr) throw new Error(lErr.message);
+  if (!links?.length) return [];
+
+  const postIds = [...new Set(links.map(l => l.post_id as string))];
+  const { data: postsRows, error } = await supabase.from('posts').select('id, author_id').in('id', postIds);
   if (error) throw new Error(error.message);
 
+  const authorByPost = new Map((postsRows ?? []).map(p => [p.id as string, (p as { author_id: string }).author_id]));
+
   const counts: Record<string, number> = {};
-  for (const p of postsRows ?? []) {
-    const aid = (p as { author_id: string }).author_id;
+  for (const link of links) {
+    const pid = link.post_id as string;
+    const aid = authorByPost.get(pid);
+    if (!aid) continue;
     counts[aid] = (counts[aid] ?? 0) + 1;
   }
 
@@ -479,12 +501,24 @@ export async function getUserCircleCount(userId: string): Promise<number> {
   return count ?? 0;
 }
 
-export async function getUserFreeFoodCount(userId: string): Promise<number> {
-  const { count, error } = await supabase
+export async function getUserFreeFoodCount(
+  subjectAuthorId: string,
+  viewerUserId?: string | null,
+  viewerProfileId?: string | null,
+): Promise<number> {
+  const showAnonymous = isPostOwner(viewerUserId, viewerProfileId, subjectAuthorId);
+
+  let q = supabase
     .from('posts')
     .select('*', { count: 'exact', head: true })
-    .eq('author_id', userId)
+    .eq('author_id', subjectAuthorId)
     .eq('is_free_food', true);
+
+  if (!showAnonymous) {
+    q = q.eq('is_anonymous', false);
+  }
+
+  const { count, error } = await q;
 
   if (error) throw new Error(error.message);
   return count ?? 0;

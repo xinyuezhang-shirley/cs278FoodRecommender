@@ -22,6 +22,7 @@ import emptyNoPostsYetSimple from '../assets/nommi/empty_no_posts_yet_simple.png
 import { getPostIntentsForUser, togglePostIntent } from '../services/interactionService';
 import { ShareToCircleModal } from '../components/community/ShareToCircleModal';
 import { useDebouncedRealtime } from '../hooks/useDebouncedRealtime';
+import { authIdsMatch } from '../utils/helpers';
 
 export function ProfilePage() {
   const { profileUserId } = useParams<{ profileUserId: string }>();
@@ -29,7 +30,8 @@ export function ProfilePage() {
   const { user, profile, signOut, loading: authLoading, refreshProfile } = useAuth();
 
   const targetUserId = profileUserId ?? user?.id ?? null;
-  const isOwnProfile = Boolean(user && targetUserId && user.id === targetUserId);
+  const isOwnProfile = Boolean(user && targetUserId &&
+    (authIdsMatch(user.id, targetUserId) || authIdsMatch(profile?.id, targetUserId)));
 
   const [subjectProfile, setSubjectProfile] = useState<UserProfile | null>(null);
   const [subjectLoadState, setSubjectLoadState] = useState<'idle' | 'loading' | 'notfound' | 'ready'>('idle');
@@ -108,9 +110,10 @@ export function ProfilePage() {
     setLoadingPosts(true);
     (async () => {
       const viewerId = user?.id;
+      const viewerProfileId = profile?.id;
       const [p, ff, cc] = await Promise.all([
-        getPostsByAuthor(targetUserId, viewerId),
-        getUserFreeFoodCount(targetUserId),
+        getPostsByAuthor(targetUserId, viewerId, viewerProfileId),
+        getUserFreeFoodCount(targetUserId, viewerId, viewerProfileId),
         getUserCircleCount(targetUserId),
       ]);
       if (cancelled) return;
@@ -148,6 +151,7 @@ export function ProfilePage() {
   }, [
     targetUserId,
     user?.id,
+    profile?.id,
     isOwnProfile,
     profile?.username,
     profile?.bio,
@@ -159,9 +163,10 @@ export function ProfilePage() {
     if (!targetUserId) return;
     try {
       const viewerId = user?.id;
+      const viewerProfileId = profile?.id;
       const [p, ff, cc] = await Promise.all([
-        getPostsByAuthor(targetUserId, viewerId),
-        getUserFreeFoodCount(targetUserId),
+        getPostsByAuthor(targetUserId, viewerId, viewerProfileId),
+        getUserFreeFoodCount(targetUserId, viewerId, viewerProfileId),
         getUserCircleCount(targetUserId),
       ]);
       setPosts(p);
@@ -182,7 +187,7 @@ export function ProfilePage() {
     } catch {
       //
     }
-  }, [targetUserId, user?.id, isOwnProfile, user, refreshProfile]);
+  }, [targetUserId, user?.id, profile?.id, isOwnProfile, user, refreshProfile]);
 
   const profileRealtimeSpecs = useMemo(
     () =>

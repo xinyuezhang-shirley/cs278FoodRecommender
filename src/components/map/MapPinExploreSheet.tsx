@@ -4,6 +4,7 @@ import { ChevronDown, Clock, GripHorizontal, MapPin, X } from 'lucide-react';
 import type { Post } from '../../types';
 import type { PlaceGroup } from '../../utils/groupPostsByLocation';
 import { timeRemaining, isExpired } from '../../utils/helpers';
+import { getPostAuthorDisplay } from '../../utils/postAuthorPresentation';
 import { PostTypeBadge } from '../ui/Tag';
 
 /**
@@ -377,7 +378,7 @@ function PostPreviewCard({
 }) {
   const expired = isExpired(post.expires_at);
   const remaining = post.expires_at && !expired ? timeRemaining(post.expires_at) : null;
-  const author = post.author?.username ? `@${post.author.username}` : 'Someone';
+  const authorLabel = getPostAuthorDisplay(post).handleLine;
   const thumbClass = compactThumb ? 'w-20 min-h-[5rem]' : 'w-[100px] min-h-[5.75rem] sm:w-[112px]';
 
   return (
@@ -404,7 +405,7 @@ function PostPreviewCard({
           <PostTypeBadge type={post.type} />
         </div>
         <p className="text-sm font-black text-[#1a1a1a] leading-snug line-clamp-3">{post.title}</p>
-        <p className="text-[11px] font-bold text-[#6b7280]">{author}</p>
+        <p className="text-[11px] font-bold text-[#6b7280]">{authorLabel}</p>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-[11px] text-[#6b7280]">
           <span className="inline-flex items-center gap-1 truncate max-w-full">
             <MapPin className="w-3 h-3 flex-shrink-0 text-[#6f90d8]" aria-hidden />

@@ -5,6 +5,8 @@ import type { Post } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { sharePostExternal } from '../../utils/sharePost';
 import { timeAgo, timeRemaining, isExpired, isPostOwner, encodeReturnQuery } from '../../utils/helpers';
+import { getPostAuthorDisplay } from '../../utils/postAuthorPresentation';
+import { PostAuthorAvatar } from './PostAuthorAvatar';
 import { PostTypeBadge } from '../ui/Tag';
 
 const PLACEHOLDER_COLORS = [
@@ -140,20 +142,24 @@ export function PostCard({
         {post.circle_share && (
           <p className="text-[10px] text-[#6b7280] font-semibold leading-snug mb-1.5">
             Original by{' '}
-            {post.author_id ? (
-              <button
-                type="button"
-                className="text-[#1a1a1a] underline-offset-2 hover:underline"
-                onClick={e => {
-                  e.stopPropagation();
-                  navigate(`/app/profile/${post.author_id}`);
-                }}
-              >
-                @{post.author?.username ?? '…'}
-              </button>
-            ) : (
-              <span className="text-[#1a1a1a]">@{post.author?.username ?? '…'}</span>
-            )}
+            {(() => {
+              const d = getPostAuthorDisplay(post);
+              if (d.showProfileLink && d.profileUserId) {
+                return (
+                  <button
+                    type="button"
+                    className="text-[#1a1a1a] underline-offset-2 hover:underline"
+                    onClick={e => {
+                      e.stopPropagation();
+                      navigate(`/app/profile/${d.profileUserId}`);
+                    }}
+                  >
+                    {d.handleLine}
+                  </button>
+                );
+              }
+              return <span className="text-[#1a1a1a]">{d.handleLine}</span>;
+            })()}
             {' · '}
             Shared by{' '}
             <button
@@ -186,6 +192,15 @@ export function PostCard({
             </Link>
           )}
         </div>
+
+        {!post.circle_share && (
+          <div className="mb-2 flex items-center gap-1.5">
+            <PostAuthorAvatar post={post} size="xs" />
+            <span className="truncate text-[11px] font-semibold text-[#6b7280]">
+              {getPostAuthorDisplay(post).handleLine}
+            </span>
+          </div>
+        )}
 
         <div className="flex items-center gap-1 text-[11px] text-[#6b7280] mb-2">
           <MapPin className="w-2.5 h-2.5 flex-shrink-0 text-[#6f90d8]" aria-hidden />

@@ -1,4 +1,4 @@
-import { useRef, useState, type TouchEvent } from 'react';
+import { useRef, useState, useEffect, type TouchEvent } from 'react';
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { BottomNav } from './BottomNav';
 import { useAuth } from '../../context/AuthContext';
@@ -74,6 +74,12 @@ export function AppLayout() {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+
+  useEffect(() => {
+    const openCreate = () => setShowCreate(true);
+    window.addEventListener('nommi-open-create-post', openCreate);
+    return () => window.removeEventListener('nommi-open-create-post', openCreate);
+  }, []);
 
   return (
     <ChatUnreadProvider userId={user.id}>

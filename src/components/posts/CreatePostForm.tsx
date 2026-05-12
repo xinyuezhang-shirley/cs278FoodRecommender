@@ -9,6 +9,7 @@ import { ImageUploader } from './ImageUploader';
 import { CuisineTagsFormField } from './CuisineTagsFormField';
 import { LocationPicker, type LocationSelection } from './LocationPicker';
 import { Modal } from '../ui/Modal';
+import type { LocationPickSource } from '../../types';
 
 // ─── Post type selector ────────────────────────────────────────────────────
 
@@ -194,6 +195,7 @@ function postToFormData(p: Post, defaultCircleId?: string): CreatePostData {
     is_free_food: p.is_free_food,
     expires_at: p.expires_at,
     circle_id: p.circle_id ?? defaultCircleId,
+    is_anonymous: Boolean(p.is_anonymous),
   };
 }
 
@@ -224,30 +226,40 @@ export function CreatePostForm({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
 
-  const initialForm = (): CreatePostData =>
-    editPost ? postToFormData(editPost, defaultCircleId) : {
-      type: 'recommendation',
-      title: '',
-      description: '',
-      image_url: undefined,
-      location_name: '',
-      latitude: undefined,
-      longitude: undefined,
-      place_website_url: undefined,
-      google_maps_url: undefined,
-      cuisine_tags: [],
-      dietary_tags: [],
-      is_free_food: false,
-      expires_at: undefined,
-      circle_id: defaultCircleId,
-    };
+  /** Dedicated flag so anonymous intent cannot drift from other `setForm` updates. */
+  const [postAnonymously, setPostAnonymously] = useState(false);
 
-  const [form, setForm] = useState<CreatePostData>(initialForm);
+  const [form, setForm] = useState<CreatePostData>(() =>
+    editPost
+      ? postToFormData(editPost, defaultCircleId)
+      : {
+          type: 'recommendation',
+          title: '',
+          description: '',
+          image_url: undefined,
+          location_name: '',
+          latitude: undefined,
+          longitude: undefined,
+          place_website_url: undefined,
+          google_maps_url: undefined,
+          cuisine_tags: [],
+          dietary_tags: [],
+          is_free_food: false,
+          expires_at: undefined,
+          circle_id: defaultCircleId,
+        },
+  );
 
   useEffect(() => {
     if (!editPost) return;
     setForm(postToFormData(editPost, defaultCircleId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload editor fields only when switching posts or circle default
   }, [editPost?.id, defaultCircleId]);
+
+  const editPostModeKey = editPost?.id ?? '__draft__';
+  useEffect(() => {
+    if (editPostModeKey === '__draft__') setPostAnonymously(false);
+  }, [editPostModeKey]);
 
   function setField<K extends keyof CreatePostData>(key: K, value: CreatePostData[K]) {
     setForm(prev => {
@@ -273,15 +285,35 @@ export function CreatePostForm({
     });
   }
 
+  function composePickSource(sel: LocationSelection): LocationPickSource | undefined {
+    if (!sel.location_source) return sel.lat != null && sel.lng != null ? 'search' : undefined;
+    if (sel.location_source === 'manual') return 'manual';
+    if (sel.location_source === 'campus') return 'campus';
+    return 'search';
+  }
+
   function handleLocationSelect(sel: LocationSelection) {
-    const hasName = sel.name.trim().length > 0;
+    const trimmed = sel.name.trim();
+    if (!trimmed) {
+      setForm(prev => ({
+        ...prev,
+        location_name: '',
+        latitude: undefined,
+        longitude: undefined,
+        place_website_url: undefined,
+        google_maps_url: undefined,
+        location_pick_source: undefined,
+      }));
+      return;
+    }
     setForm(prev => ({
       ...prev,
-      location_name: sel.name,
+      location_name: trimmed,
       latitude: sel.lat,
       longitude: sel.lng,
-      place_website_url: hasName ? sel.place_website_url : undefined,
-      google_maps_url: hasName ? sel.google_maps_url : undefined,
+      place_website_url: sel.place_website_url,
+      google_maps_url: sel.google_maps_url,
+      location_pick_source: composePickSource(sel),
     }));
   }
 
@@ -328,7 +360,14 @@ export function CreatePostForm({
       const circleTarget = defaultCircleId;
       const stripped = { ...form };
       delete stripped.circle_id;
-      const payload: CreatePostData = { ...stripped, circle_id: undefined };
+      const payload: CreatePostData = {
+        ...stripped,
+        circle_id: undefined,
+        is_anonymous: postAnonymously,
+      };
+      if (import.meta.env.DEV) {
+        console.log('[CreatePost] submit', { postAnonymously, payloadIsAnonymous: payload.is_anonymous });
+      }
       const post = await createPost(payload, user.id);
       if (circleTarget) {
         try {
@@ -450,11 +489,17 @@ export function CreatePostForm({
         {/* 4. Location */}
         <LocationPicker
           locationName={form.location_name}
+          latitude={form.latitude}
+          longitude={form.longitude}
           onSelect={handleLocationSelect}
         />
-        {(form.google_maps_url || form.place_website_url) && (
+        {(form.google_maps_url || form.place_website_url || form.location_pick_source === 'manual') && (
           <div className="px-5 py-3 text-[11px] text-[#6b7280] space-y-1 bg-[#f8fafc] border-y border-[#eef2f6]">
-            <p className="font-black uppercase tracking-wide text-[#9ca3af] text-[10px]">Saved from Google Places</p>
+            <p className="font-black uppercase tracking-wide text-[#9ca3af] text-[10px]">
+              {form.location_pick_source === 'manual'
+                ? 'Manual pin on map'
+                : 'Saved from Google Places'}
+            </p>
             {form.google_maps_url && (
               <p className="truncate"><span className="font-semibold text-[#475569]">Maps:</span>{' '}<span className="text-[#2f5fc4]">{form.google_maps_url}</span></p>
             )}
@@ -476,7 +521,66 @@ export function CreatePostForm({
           onToggleDietary={tag => toggleTag('dietary_tags', tag)}
         />
 
-        {/* 6. Expiration (free food only) */}
+        <Divider />
+
+        {/* Anonymous — new posts only */}
+        {!editPost && (
+          <>
+            <div className="px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[#1a1a1a]">Post anonymously</p>
+                  <p className="mt-1 text-[11px] leading-snug text-[#9ca3af]">
+                    Your username will be hidden from other users.
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-[#9ca3af]">
+                    This action cannot be undone.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={postAnonymously}
+                  onClick={() => {
+                    setPostAnonymously(v => {
+                      const next = !v;
+                      if (import.meta.env.DEV) {
+                        console.log('[CreatePost] anonymous toggle →', next);
+                      }
+                      return next;
+                    });
+                  }}
+                  className={[
+                    'relative h-7 w-12 shrink-0 rounded-full transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#2f5fc4]/35 focus-visible:ring-offset-2',
+                    postAnonymously ? 'bg-[#2f5fc4]' : 'bg-[#e5e7eb]',
+                  ].join(' ')}
+                >
+                  <span
+                    className={[
+                      'absolute top-0.5 left-0.5 block h-6 w-6 rounded-full bg-white shadow transition-transform motion-safe:duration-200',
+                      postAnonymously ? 'translate-x-5' : 'translate-x-0',
+                    ].join(' ')}
+                  />
+                </button>
+              </div>
+            </div>
+            <Divider />
+          </>
+        )}
+
+        {editPost?.is_anonymous ? (
+          <>
+            <div className="mx-4 mt-1 rounded-xl border border-[#eef2f6] bg-[#fafbff] px-3 py-2.5">
+              <p className="text-[13px] font-semibold text-[#374151]">Posted anonymously</p>
+              <p className="mt-1 text-[11px] leading-snug text-[#9ca3af]">
+                Anonymous posts stay anonymous permanently.
+              </p>
+            </div>
+            <Divider />
+          </>
+        ) : null}
+
+        {/* Expiration (free food only) */}
         {form.is_free_food && (
           <>
             <Divider />

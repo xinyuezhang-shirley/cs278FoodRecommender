@@ -44,6 +44,8 @@ export interface Post {
   is_free_food: boolean;
   expires_at?: string;
   circle_id?: string;
+  /** When true, UI shows pseudonym author; `author_id` remains the real owner. */
+  is_anonymous?: boolean;
   /** Present when post is shown in a circle feed (curated share, not authorship). */
   circle_share?: CircleShareMeta;
   created_at: string;
@@ -131,6 +133,9 @@ export interface SignInData {
   password: string;
 }
 
+/** Compose-only: how location was picked (posts table unchanged). */
+export type LocationPickSource = 'manual' | 'campus' | 'search';
+
 export interface CreatePostData {
   type: PostType;
   title: string;
@@ -139,6 +144,8 @@ export interface CreatePostData {
   location_name: string;
   latitude?: number;
   longitude?: number;
+  /** Client-only hint while drafting; omit from DB writes. */
+  location_pick_source?: LocationPickSource;
   place_website_url?: string;
   google_maps_url?: string;
   cuisine_tags: string[];
@@ -146,6 +153,7 @@ export interface CreatePostData {
   is_free_food: boolean;
   expires_at?: string;
   circle_id?: string;
+  is_anonymous?: boolean;
 }
 
 export interface AppError {

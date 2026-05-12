@@ -12,12 +12,14 @@ import { getCommentsForPost, addComment, deleteComment } from '../../services/co
 import {
   timeAgo, timeRemaining, isExpired, formatDate, isPostOwner, encodeReturnQuery,
 } from '../../utils/helpers';
+import { ANONYMOUS_HANDLE, getPostAuthorDisplay } from '../../utils/postAuthorPresentation';
 import { Avatar } from '../ui/Avatar';
 import { Tag, PostTypeBadge } from '../ui/Tag';
 import { PageLoader } from '../ui/LoadingSpinner';
 import { ShareToCircleModal } from '../community/ShareToCircleModal';
 import { getPostIntentsForUser, togglePostIntent } from '../../services/interactionService';
 import { sharePostExternal } from '../../utils/sharePost';
+import { PostAuthorAvatar } from './PostAuthorAvatar';
 import { supabase } from '../../lib/supabase';
 
 interface PostDetailProps {
@@ -50,6 +52,7 @@ export function PostDetail({
   const [activeIntents, setActiveIntents] = useState<Set<IntentType>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const isOwner = isPostOwner(user?.id, profile?.id, post.author_id, post.author?.id);
+  const authorDisplay = getPostAuthorDisplay(post);
   const expired = isExpired(post.expires_at);
   const remaining = post.expires_at && !expired ? timeRemaining(post.expires_at) : null;
   const isVideo = !!post.image_url && (/\.(mp4|webm|ogg)(\?.*)?$/i.test(post.image_url) || post.image_url.includes('youtube.com') || post.image_url.includes('youtu.be'));
@@ -310,7 +313,19 @@ export function PostDetail({
             <div className="mb-3 px-3 py-2 rounded-2xl border border-[#e5e7eb] bg-[#f5f7ff] text-xs text-[#6b7280] leading-relaxed">
               <span className="font-black text-[#2f5fc4]">{post.circle_share.circle_name}</span>
               {' · '}
-              <span className="font-semibold text-[#1a1a1a]">Original by @{post.author?.username ?? '…'}</span>
+              <span className="font-semibold text-[#1a1a1a]">
+                Original by{' '}
+                {authorDisplay.showProfileLink && authorDisplay.profileUserId ? (
+                  <Link
+                    to={`/app/profile/${authorDisplay.profileUserId}`}
+                    className="text-[#2f5fc4] hover:underline"
+                  >
+                    {authorDisplay.handleLine}
+                  </Link>
+                ) : (
+                  authorDisplay.handleLine
+                )}
+              </span>
               {' · '}
               <span>
                 Shared by{' '}
@@ -336,22 +351,32 @@ export function PostDetail({
           </div>
 
           {/* Author row */}
-          <div className="flex items-center gap-2 mb-3">
-            {post.author && (
+          <div className="mb-3 flex items-center gap-2">
+            {!authorDisplay.showProfileLink ? (
               <>
-                <Link to={`/app/profile/${post.author_id}`} className="flex items-center gap-2 min-w-0 rounded-xl focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#2f5fc4]/35">
-                  <Avatar
-                    username={post.author.username}
-                    avatarUrl={post.author.avatar_url}
-                    size="sm"
-                  />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-[#1a1a1a]">@{post.author.username}</p>
-                    <p className="text-xs text-[#6b7280]">{formatDate(post.created_at)}</p>
-                  </div>
-                </Link>
+                <PostAuthorAvatar post={post} size="sm" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#1a1a1a]">{authorDisplay.handleLine}</p>
+                  {isOwner && post.is_anonymous ? (
+                    <p className="text-[11px] font-semibold text-[#9ca3af]">
+                      Others only see {ANONYMOUS_HANDLE}.
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-[#6b7280]">{formatDate(post.created_at)}</p>
+                </div>
               </>
-            )}
+            ) : post.author ? (
+              <Link
+                to={`/app/profile/${authorDisplay.profileUserId}`}
+                className="flex min-w-0 items-center gap-2 rounded-xl focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#2f5fc4]/35"
+              >
+                <PostAuthorAvatar post={post} size="sm" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#1a1a1a]">{authorDisplay.handleLine}</p>
+                  <p className="text-xs text-[#6b7280]">{formatDate(post.created_at)}</p>
+                </div>
+              </Link>
+            ) : null}
           </div>
 
           {/* Location & time */}
@@ -413,10 +438,10 @@ export function PostDetail({
             <button
               onClick={() => handleReact('like')}
               disabled={reacting || !user}
-              aria-pressed={Boolean(post.viewer_reactions?.includes('like'))}
+              aria-pressed={!!post.viewer_reactions?.includes('like')}
               className={[
                 'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all border-2',
-                Boolean(post.viewer_reactions?.includes('like'))
+                post.viewer_reactions?.includes('like')
                   ? 'border-rose-400 bg-linear-to-br from-rose-50 to-pink-50 text-rose-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] ring-2 ring-rose-200/90'
                   : 'border-transparent bg-[#f3f4f6] text-[#6b7280] hover:border-rose-200 hover:bg-[#fff1f2] hover:text-rose-600',
               ].join(' ')}
@@ -429,10 +454,10 @@ export function PostDetail({
               <button
                 onClick={() => handleReact('still_there')}
                 disabled={reacting || !user}
-                aria-pressed={Boolean(post.viewer_reactions?.includes('still_there'))}
+                aria-pressed={!!post.viewer_reactions?.includes('still_there')}
                 className={[
                   'flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all border-2',
-                  Boolean(post.viewer_reactions?.includes('still_there'))
+                  post.viewer_reactions?.includes('still_there')
                     ? 'border-emerald-500 bg-linear-to-br from-emerald-50 to-green-50 text-emerald-800 ring-2 ring-emerald-200/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]'
                     : 'border-transparent bg-[#f3f4f6] text-[#6b7280] hover:border-emerald-200 hover:bg-[#f0fdf4] hover:text-emerald-700',
                 ].join(' ')}

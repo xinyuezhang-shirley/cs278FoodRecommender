@@ -4,6 +4,7 @@ import type {
 import { supabase } from '../lib/supabase';
 import { profileLiteFromRow } from './profileHelpers';
 import { sanitizeText, sanitizeTags } from '../utils/sanitize';
+import { isPostOwner } from '../utils/helpers';
 import { SEED_COMMENTS, SEED_POSTS, SEED_PROFILES, SEED_REACTIONS } from './mockData';
 
 function viewerReactionsForUser(
@@ -38,14 +39,56 @@ function isPostsUrlColumnMissingError(error: { message?: string } | null | undef
   ) && (msg.includes('schema cache') || msg.includes('could not find') || msg.includes('column'));
 }
 
+function isPostsAnonymousColumnMissingError(error: { message?: string } | null | undefined): boolean {
+  const msg = (error?.message ?? '').toLowerCase();
+  if (!msg) return false;
+  return msg.includes('is_anonymous') && (msg.includes('schema cache') || msg.includes('could not find') || msg.includes('column'));
+}
+
+/** Normalize DB / JSON boolean quirks (PostgREST / drivers). */
+function rowBool(v: unknown): boolean {
+  if (v === true) return true;
+  if (v === false || v == null) return false;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    return s === 'true' || s === 't' || s === '1' || s === 'yes';
+  }
+  return Boolean(v);
+}
+
+/** Raw column from PostgREST (snake_case) or occasional camelCase transforms. */
+function rowAnonymousRaw(row: Record<string, unknown>): unknown {
+  if ('is_anonymous' in row) return row.is_anonymous;
+  const r = row as { isAnonymous?: unknown };
+  return r.isAnonymous;
+}
+
+/** Prefer stored value when present; otherwise use creation-time intent (handles stale schema cache omitting the column). */
+function pickAnonymousFromRow(row: Record<string, unknown>, requestedAtCreate: boolean): boolean {
+  const v = rowAnonymousRaw(row);
+  if (v !== undefined && v !== null) return rowBool(v);
+  return requestedAtCreate;
+}
+
 async function insertPostPayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   let insert = { ...payload };
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     const { data, error } = await supabase.from('posts').insert(insert).select('*').single();
     if (!error && data) return data as Record<string, unknown>;
 
     const errMsg = error?.message ?? 'Could not create post.';
-    if (!isPostsUrlColumnMissingError(error)) throw new Error(errMsg);
+    if (!isPostsUrlColumnMissingError(error) && !isPostsAnonymousColumnMissingError(error)) {
+      throw new Error(errMsg);
+    }
+
+    if (isPostsAnonymousColumnMissingError(error) && 'is_anonymous' in insert) {
+      throw new Error(
+        'Cannot save anonymous preference: PostgREST does not see `posts.is_anonymous` yet. '
+        + 'Apply migration `019_posts_is_anonymous.sql`, then Supabase Dashboard → Settings → API → Reload schema '
+        + '(or run `NOTIFY pgrst, \'reload schema\';`). '
+        + `(${errMsg})`,
+      );
+    }
 
     if ('google_maps_url' in insert) {
       insert = { ...insert };
@@ -65,7 +108,7 @@ async function insertPostPayload(payload: Record<string, unknown>): Promise<Reco
 async function updatePostPayload(id: string, authorId: string, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
   let patchToSend = { ...patch };
 
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 8; attempt++) {
     if (Object.keys(patchToSend).length === 0) {
       throw new Error(POST_URL_COLUMNS_MIGRATION_HINT);
     }
@@ -83,7 +126,9 @@ async function updatePostPayload(id: string, authorId: string, patch: Record<str
     }
 
     const errMsg = error?.message ?? 'Could not update post.';
-    if (!isPostsUrlColumnMissingError(error)) throw new Error(errMsg);
+    if (!isPostsUrlColumnMissingError(error)) {
+      throw new Error(errMsg);
+    }
 
     if ('google_maps_url' in patchToSend) {
       patchToSend = { ...patchToSend };
@@ -183,6 +228,7 @@ function mapRowToPost(
     is_free_food: Boolean(row.is_free_food),
     expires_at: typeof row.expires_at === 'string' ? row.expires_at : undefined,
     circle_id: typeof row.circle_id === 'string' ? row.circle_id : undefined,
+    is_anonymous: rowBool(rowAnonymousRaw(row)),
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
   };
@@ -353,20 +399,44 @@ export async function getLikedPostIdsForUser(userId: string): Promise<string[]> 
   }
 }
 
-export async function getPostsByAuthor(authorId: string, currentUserId?: string): Promise<Post[]> {
-  const { data: rows, error } = await supabase
+/**
+ * Avatar grid / authored posts list for a profile.
+ * Anonymous posts (`is_anonymous`) are hidden when viewing anyone except the owner (creator still sees theirs).
+ */
+export async function getPostsByAuthor(
+  authorId: string,
+  viewerUserId?: string | null,
+  viewerProfileId?: string | null,
+): Promise<Post[]> {
+  const showAnonymous = isPostOwner(viewerUserId, viewerProfileId, authorId);
+
+  let q = supabase
     .from('posts')
     .select('*')
     .eq('author_id', authorId)
     .order('created_at', { ascending: false });
 
+  if (!showAnonymous) {
+    q = q.eq('is_anonymous', false);
+  }
+
+  const { data: rows, error } = await q;
+
   if (error) {
-    return getFallbackPosts({}, currentUserId).filter(p => p.author_id === authorId);
+    return getFallbackPosts({}, viewerUserId ?? undefined).filter((p) => {
+      if (p.author_id !== authorId) return false;
+      if (!showAnonymous && p.is_anonymous) return false;
+      return true;
+    });
   }
   if ((rows ?? []).length === 0) {
-    return getFallbackPosts({}, currentUserId).filter(p => p.author_id === authorId);
+    return getFallbackPosts({}, viewerUserId ?? undefined).filter((p) => {
+      if (p.author_id !== authorId) return false;
+      if (!showAnonymous && p.is_anonymous) return false;
+      return true;
+    });
   }
-  return enrichPosts((rows ?? []) as Record<string, unknown>[], currentUserId);
+  return enrichPosts((rows ?? []) as Record<string, unknown>[], viewerUserId ?? undefined);
 }
 
 export async function createPost(
@@ -394,11 +464,21 @@ export async function createPost(
     is_free_food: data.is_free_food,
     expires_at: data.expires_at ?? null,
     circle_id: data.circle_id ?? null,
+    is_anonymous: data.is_anonymous === true,
   };
 
-  const row = await insertPostPayload(insert);
+  if (import.meta.env.DEV) {
+    console.log('[postService createPost] insert payload keys', {
+      is_anonymous: insert.is_anonymous,
+      fromData: data.is_anonymous,
+    });
+  }
 
-  const [enriched] = await enrichPosts([row as Record<string, unknown>], authorId);
+  const row = await insertPostPayload(insert);
+  const raw = { ...(row as Record<string, unknown>) };
+  raw.is_anonymous = pickAnonymousFromRow(raw, data.is_anonymous === true);
+
+  const [enriched] = await enrichPosts([raw], authorId);
   if (!enriched) throw new Error('Could not load new post');
   return enriched;
 }

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import nommiLogoTagline from '../assets/nommi/nommi_logo_tagline.png';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 interface AuthPageProps {
   mode: 'login' | 'signup';
@@ -58,6 +59,18 @@ export function AuthPage({ mode }: AuthPageProps) {
         <h2 className="text-2xl font-black text-[#2f5fc4] mb-6 tracking-wide text-center uppercase">
           {mode === 'login' ? 'WELCOME BACK' : 'CREATE YOUR ACCOUNT'}
         </h2>
+
+        {!isSupabaseConfigured ? (
+          <div
+            className="mb-4 rounded-2xl border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-center text-[13px] leading-snug text-amber-950"
+            role="status"
+          >
+            Supabase isn&apos;t configured for this deployment. Add{' '}
+            <span className="font-mono text-[11px]">VITE_SUPABASE_URL</span> and{' '}
+            <span className="font-mono text-[11px]">VITE_SUPABASE_ANON_KEY</span> in Vercel → Environment Variables,
+            then redeploy.
+          </div>
+        ) : null}
 
         {error && (
           <div className="mb-4 px-3 py-2.5 bg-red-50 text-red-600 text-sm rounded-2xl" role="alert">

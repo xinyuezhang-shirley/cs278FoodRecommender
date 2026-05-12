@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MapPin, Search, X, ChevronRight, Loader2 } from 'lucide-react';
+import L from 'leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import { MapPin, Search, X, ChevronRight, Loader2, ArrowLeft } from 'lucide-react';
 import { CAMPUS_LOCATIONS } from '../../utils/helpers';
 import type { LocationAutocompleteItem } from '../../services/locationService';
 import {
@@ -16,18 +19,118 @@ export interface LocationSelection {
   lng?: number;
   place_website_url?: string;
   google_maps_url?: string;
+  /** Client-only hint for compose UI (not stored on `posts` today). */
+  location_source?: 'manual' | 'search' | 'campus';
+}
+
+const CAMPUS_FALLBACK_CENTER: [number, number] = [37.4290, -122.1685];
+const MANUAL_MAP_ZOOM = 16;
+
+function osmViewUrl(lat: number, lng: number): string {
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
+}
+
+const manualPlacementIcon = L.divIcon({
+  className: 'nommi-manual-pin-marker',
+  html:
+    `<div aria-hidden="true" style="width:32px;height:32px;border-radius:9999px;background:#fef2f2;border:2px solid #f43f5e;`
+    + `box-shadow:0 4px 12px rgba(244,63,94,0.35);display:flex;align-items:center;justify-content:center;font-size:16px">📍</div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+});
+
+function PlacementListener({ onPlacement }: { onPlacement: (ll: [number, number]) => void }) {
+  useMapEvents({
+    click(e) {
+      onPlacement([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+  return null;
+}
+
+function ManualPinMapSizer() {
+  const map = useMap();
+  useEffect(() => {
+    const invalidate = () => map.invalidateSize();
+    invalidate();
+    const raf = requestAnimationFrame(invalidate);
+    const t = window.setTimeout(invalidate, 220);
+    const t2 = window.setTimeout(invalidate, 500);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t);
+      window.clearTimeout(t2);
+    };
+  }, [map]);
+  return null;
+}
+
+function ManualPinPickerMap({
+  center,
+  zoom,
+  pin,
+  onPinChange,
+}: {
+  center: [number, number];
+  zoom: number;
+  pin: [number, number] | null;
+  onPinChange: (ll: [number, number]) => void;
+}) {
+  return (
+    <MapContainer
+      center={center}
+      zoom={zoom}
+      scrollWheelZoom={false}
+      className={[
+        'z-0 h-full min-h-[200px] w-full rounded-xl',
+        '[&_.leaflet-control-zoom]:rounded-lg [&_.leaflet-control-zoom]:border-0 [&_.leaflet-control-zoom]:shadow-md',
+      ].join(' ')}
+      style={{ height: '100%', width: '100%' }}
+      zoomControl
+    >
+      <TileLayer
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        attribution='&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        subdomains="abcd"
+        maxZoom={19}
+      />
+      <ManualPinMapSizer />
+      <PlacementListener onPlacement={onPinChange} />
+      {pin ? (
+        <Marker
+          position={pin}
+          draggable
+          icon={manualPlacementIcon}
+          eventHandlers={{
+            dragend: (ev) => {
+              const marker = ev.target as L.Marker;
+              const ll = marker.getLatLng();
+              onPinChange([ll.lat, ll.lng]);
+            },
+          }}
+        />
+      ) : null}
+    </MapContainer>
+  );
 }
 
 interface Props {
   locationName: string;
+  latitude?: number;
+  longitude?: number;
   onSelect: (sel: LocationSelection) => void;
 }
 
-export function LocationPicker({ locationName, onSelect }: Props) {
+export function LocationPicker({ locationName, latitude, longitude, onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [customMode, setCustomMode] = useState(false);
+  const [manualPhase, setManualPhase] = useState<'map' | 'name'>('map');
+  const [pinLatLng, setPinLatLng] = useState<[number, number] | null>(null);
+  const [manualMapNonce, setManualMapNonce] = useState(0);
+  /** Viewport anchor only — do not tie to draggable pin or the map jumps on each drag. */
+  const [frozenMapCenter, setFrozenMapCenter] = useState<[number, number]>(CAMPUS_FALLBACK_CENTER);
   const [customDraft, setCustomDraft] = useState('');
   const [remoteSuggestions, setRemoteSuggestions] = useState<LocationAutocompleteItem[]>([]);
   const [placesLoading, setPlacesLoading] = useState(false);
@@ -38,6 +141,20 @@ export function LocationPicker({ locationName, onSelect }: Props) {
   const placesEnabled = placesSearchAvailable();
   const googleConfigured = isGoogleMapsConfigured();
   const nominatimConfigured = isNominatimSearchEnabled();
+
+  const coordPropsValid =
+    latitude != null
+    && longitude != null
+    && Number.isFinite(latitude)
+    && Number.isFinite(longitude);
+
+  const resetManualPlacement = useCallback(() => {
+    setCustomMode(false);
+    setManualPhase('map');
+    setPinLatLng(null);
+    setCustomDraft('');
+    setFrozenMapCenter(CAMPUS_FALLBACK_CENTER);
+  }, []);
 
   const runMapsWarmup = useCallback(() => {
     if (!googleConfigured) return;
@@ -97,9 +214,10 @@ export function LocationPicker({ locationName, onSelect }: Props) {
     return () => { cancelled = true; };
   }, [debouncedQuery]);
 
-  const filtered = CAMPUS_LOCATIONS.filter(l =>
-    !query || l.name.toLowerCase().includes(query.toLowerCase())
-  );
+  function onSearchInputChange(raw: string) {
+    setQuery(raw);
+    if (customMode) resetManualPlacement();
+  }
 
   function finalize(sel: LocationSelection) {
     onSelect(sel);
@@ -107,8 +225,7 @@ export function LocationPicker({ locationName, onSelect }: Props) {
     setQuery('');
     setDebouncedQuery('');
     setRemoteSuggestions([]);
-    setCustomMode(false);
-    setCustomDraft('');
+    resetManualPlacement();
     setResolvingPlaceId(null);
   }
 
@@ -127,12 +244,13 @@ export function LocationPicker({ locationName, onSelect }: Props) {
         lat: item.lat,
         lng: item.lng,
         google_maps_url: item.openStreetMapUrl,
+        location_source: 'search',
       });
       return;
     }
 
     if (!item.placeId) {
-      finalize({ name: displayLine });
+      finalize({ name: displayLine, location_source: 'search' });
       return;
     }
     setResolvingPlaceId(item.placeId);
@@ -145,24 +263,61 @@ export function LocationPicker({ locationName, onSelect }: Props) {
           lng: det.lng,
           place_website_url: det.placeWebsiteUrl,
           google_maps_url: det.googleMapsUrl,
+          location_source: 'search',
         });
       } else {
-        finalize({ name: item.secondary ? `${item.displayName}, ${item.secondary}` : item.displayName });
+        finalize({
+          name: item.secondary ? `${item.displayName}, ${item.secondary}` : item.displayName,
+          location_source: 'search',
+        });
       }
     } catch {
-      finalize({ name: item.secondary ? `${item.displayName}, ${item.secondary}` : item.displayName });
+      finalize({
+        name: item.secondary ? `${item.displayName}, ${item.secondary}` : item.displayName,
+        location_source: 'search',
+      });
     } finally {
       setResolvingPlaceId(null);
     }
   }
 
   function selectCampus(name: string, lat?: number, lng?: number) {
-    finalize({ name, lat, lng });
+    finalize({ name, lat, lng, location_source: 'campus' });
   }
 
-  function applyCustom() {
-    const v = customDraft.trim();
-    if (v) finalize({ name: v });
+  function beginManualPinFlow() {
+    setFrozenMapCenter(coordPropsValid ? [latitude!, longitude!] : CAMPUS_FALLBACK_CENTER);
+    setManualMapNonce(n => n + 1);
+    setCustomMode(true);
+    setManualPhase('map');
+    setCustomDraft('');
+    if (coordPropsValid) {
+      setPinLatLng([latitude!, longitude!]);
+    } else {
+      setPinLatLng(null);
+    }
+  }
+
+  function goToNamePhase() {
+    if (!pinLatLng) return;
+    if (locationName.trim() && !customDraft.trim()) {
+      setCustomDraft(locationName.trim());
+    }
+    setManualPhase('name');
+  }
+
+  function applyManualLocation() {
+    if (!pinLatLng) return;
+    const name = customDraft.trim();
+    if (!name) return;
+    finalize({
+      name,
+      lat: pinLatLng[0],
+      lng: pinLatLng[1],
+      google_maps_url: osmViewUrl(pinLatLng[0], pinLatLng[1]),
+      place_website_url: undefined,
+      location_source: 'manual',
+    });
   }
 
   function handleOpenAndClear() {
@@ -172,6 +327,13 @@ export function LocationPicker({ locationName, onSelect }: Props) {
 
   const googleRemote = remoteSuggestions.filter(s => s.source !== 'osm');
   const osmRemote = remoteSuggestions.filter(s => s.source === 'osm');
+  const campusFiltered = CAMPUS_LOCATIONS.filter(l =>
+    !query || l.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const manualStatusLine = !pinLatLng
+    ? 'Tap the map to place your pin'
+    : 'Drag the pin to adjust — or tap the map to move it';
 
   return (
     <div ref={containerRef} className="relative">
@@ -212,7 +374,7 @@ export function LocationPicker({ locationName, onSelect }: Props) {
               autoFocus
               type="text"
               value={query}
-              onChange={e => setQuery(e.target.value)}
+              onChange={e => onSearchInputChange(e.target.value)}
               placeholder="Search place name (cafés, restaurants, spots)…"
               className="flex-1 text-sm text-[#1a1a1a] outline-none bg-transparent placeholder-[#94a3b8]"
             />
@@ -267,133 +429,219 @@ export function LocationPicker({ locationName, onSelect }: Props) {
             </div>
           )}
 
-          <div className="max-h-[260px] overflow-y-auto overscroll-contain bg-white">
-            <p className="text-[10px] font-black text-[#9ca3af] uppercase px-4 pt-3 pb-1 tracking-wide">On campus</p>
-            {filtered.map(loc => (
-              <button
-                key={loc.name}
-                type="button"
-                onClick={() => selectCampus(loc.name, loc.lat, loc.lng)}
-                className="w-full flex items-start gap-3 px-4 py-2 text-left hover:bg-[#faf9f5]"
-              >
-                <MapPin className="w-3.5 h-3.5 text-[#2f5fc4] mt-1 shrink-0" />
-                <span className="text-sm text-[#1a1a1a]">{loc.name}</span>
-              </button>
-            ))}
-            {filtered.length === 0 && !remoteSuggestions.length && !placesLoading && (
-              <p className="text-xs text-[#9ca3af] px-4 py-3 leading-relaxed">
-                {debouncedQuery.length < 2
-                  ? 'Type at least two characters to search off campus (Google Places and/or OpenStreetMap).'
-                  : googleConfigured && mapsBootstrap === 'failed'
-                    ? 'Google search isn’t available right now — try OpenStreetMap results, campus picks, or Pin manually.'
-                    : placesEnabled
-                      ? 'Nothing matched yet. Try simpler words — or Pin a spot manually.'
-                      : 'Try another spelling — or Pin a spot manually.'}
-              </p>
-            )}
-
-            {googleRemote.length > 0 && (
-              <>
-                <p className="text-[10px] font-black text-[#9ca3af] uppercase px-4 pt-4 pb-1 tracking-wide flex items-center gap-2">
-                  Google Places
-                  <span className="font-semibold lowercase text-[#c4c9d6] tracking-normal normal-case">Pins map when available</span>
-                </p>
-                {googleRemote.map(item => {
-                  const key = `g-${item.placeId ?? item.displayName}-${item.secondary ?? ''}`;
-                  const busy = resolvingPlaceId === item.placeId && item.placeId;
-                  const line2 = item.secondary;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => void selectRemotePlace(item)}
-                      disabled={!!busy}
-                      className="w-full flex items-start gap-3 px-4 py-2 text-left hover:bg-[#fafbff] disabled:opacity-50"
-                    >
-                      <span className="text-lg shrink-0" aria-hidden>📍</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{item.displayName}</span>
-                        {line2 && <span className="block text-xs text-[#6b7280] mt-0.5 line-clamp-2">{line2}</span>}
-                      </span>
-                      {busy && <Loader2 className="w-4 h-4 animate-spin shrink-0 text-[#2f5fc4]" />}
-                    </button>
-                  );
-                })}
-              </>
-            )}
-
-            {osmRemote.length > 0 && (
-              <>
-                <p className="text-[10px] font-black text-[#9ca3af] uppercase px-4 pt-4 pb-1 tracking-wide flex items-center gap-2">
-                  OpenStreetMap
-                  <span className="font-semibold lowercase text-[#c4c9d6] tracking-normal normal-case">Nominatim · © OSM contributors</span>
-                </p>
-                {osmRemote.map(item => {
-                  const key = `o-${item.placeId ?? item.displayName}-${item.secondary ?? ''}`;
-                  const line2 = item.secondary;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => void selectRemotePlace(item)}
-                      className="w-full flex items-start gap-3 px-4 py-2 text-left hover:bg-[#f0fdf4]"
-                    >
-                      <span className="text-lg shrink-0" aria-hidden>🗺️</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{item.displayName}</span>
-                        {line2 && <span className="block text-xs text-[#6b7280] mt-0.5 line-clamp-2">{line2}</span>}
-                      </span>
-                    </button>
-                  );
-                })}
-                <p className="text-[10px] text-[#94a3b8] px-4 pb-2 pt-1">
-                  © OpenStreetMap contributors, ODbL. Data{' '}
-                  <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">
-                    licensing
-                  </a>
-                  .
-                </p>
-              </>
-            )}
-          </div>
-
-          <div className="border-t border-[#f3f4f6] bg-[#faf9f5]/80">
-            {!customMode ? (
-              <button
-                type="button"
-                onClick={() => setCustomMode(true)}
-                className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-white/80"
-              >
-                <ChevronRight className="w-3.5 h-3.5 text-[#9ca3af]" aria-hidden />
-                <span className="text-sm text-[#6b7280]">Pin a spot manually…</span>
-              </button>
-            ) : (
-              <div className="flex gap-2 px-3 py-2.5 items-center">
-                <input
-                  autoFocus
-                  type="text"
-                  value={customDraft}
-                  onChange={e => setCustomDraft(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      applyCustom();
-                    }
-                  }}
-                  placeholder="Name this place yourself"
-                  className="flex-1 text-sm px-3 py-1.5 bg-white rounded-xl border border-[#e5e7eb] outline-none"
-                />
+          {!customMode ? (
+            <div className="max-h-[260px] overflow-y-auto overscroll-contain bg-white">
+              <p className="text-[10px] font-black text-[#9ca3af] uppercase px-4 pt-3 pb-1 tracking-wide">On campus</p>
+              {campusFiltered.map(loc => (
                 <button
+                  key={loc.name}
                   type="button"
-                  onClick={applyCustom}
-                  disabled={!customDraft.trim()}
-                  className="text-sm font-semibold px-2 disabled:opacity-40 text-[#f43f5e]"
+                  onClick={() => selectCampus(loc.name, loc.lat, loc.lng)}
+                  className="w-full flex items-start gap-3 px-4 py-2 text-left hover:bg-[#faf9f5]"
                 >
-                  Use
+                  <MapPin className="w-3.5 h-3.5 text-[#2f5fc4] mt-1 shrink-0" />
+                  <span className="text-sm text-[#1a1a1a]">{loc.name}</span>
                 </button>
-              </div>
-            )}
-          </div>
+              ))}
+              {campusFiltered.length === 0 && !remoteSuggestions.length && !placesLoading && (
+                <p className="text-xs text-[#9ca3af] px-4 py-3 leading-relaxed">
+                  {debouncedQuery.length < 2
+                    ? 'Type at least two characters to search off campus (Google Places and/or OpenStreetMap).'
+                    : googleConfigured && mapsBootstrap === 'failed'
+                      ? 'Google search isn’t available right now — try OpenStreetMap results, campus picks, or put a pin on the map.'
+                      : placesEnabled
+                        ? 'Nothing matched yet. Try simpler words — or put a pin on the map.'
+                        : 'Try another spelling — or put a pin on the map.'}
+                </p>
+              )}
+
+              {googleRemote.length > 0 && (
+                <>
+                  <p className="text-[10px] font-black text-[#9ca3af] uppercase px-4 pt-4 pb-1 tracking-wide flex items-center gap-2">
+                    Google Places
+                    <span className="font-semibold lowercase text-[#c4c9d6] tracking-normal normal-case">Pins map when available</span>
+                  </p>
+                  {googleRemote.map(item => {
+                    const key = `g-${item.placeId ?? item.displayName}-${item.secondary ?? ''}`;
+                    const busy = resolvingPlaceId === item.placeId && item.placeId;
+                    const line2 = item.secondary;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => void selectRemotePlace(item)}
+                        disabled={!!busy}
+                        className="w-full flex items-start gap-3 px-4 py-2 text-left hover:bg-[#fafbff] disabled:opacity-50"
+                      >
+                        <span className="text-lg shrink-0" aria-hidden>📍</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{item.displayName}</span>
+                          {line2 && <span className="block text-xs text-[#6b7280] mt-0.5 line-clamp-2">{line2}</span>}
+                        </span>
+                        {busy && <Loader2 className="w-4 h-4 animate-spin shrink-0 text-[#2f5fc4]" />}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+
+              {osmRemote.length > 0 && (
+                <>
+                  <p className="text-[10px] font-black text-[#9ca3af] uppercase px-4 pt-4 pb-1 tracking-wide flex items-center gap-2">
+                    OpenStreetMap
+                    <span className="font-semibold lowercase text-[#c4c9d6] tracking-normal normal-case">Nominatim · © OSM contributors</span>
+                  </p>
+                  {osmRemote.map(item => {
+                    const key = `o-${item.placeId ?? item.displayName}-${item.secondary ?? ''}`;
+                    const line2 = item.secondary;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => void selectRemotePlace(item)}
+                        className="w-full flex items-start gap-3 px-4 py-2 text-left hover:bg-[#f0fdf4]"
+                      >
+                        <span className="text-lg shrink-0" aria-hidden>🗺️</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-[#1a1a1a] truncate">{item.displayName}</span>
+                          {line2 && <span className="block text-xs text-[#6b7280] mt-0.5 line-clamp-2">{line2}</span>}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  <p className="text-[10px] text-[#94a3b8] px-4 pb-2 pt-1">
+                    © OpenStreetMap contributors, ODbL. Data{' '}
+                    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="underline">
+                      licensing
+                    </a>
+                    .
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white px-3 py-3">
+              <button
+                type="button"
+                onClick={() => resetManualPlacement()}
+                className="mb-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#2f5fc4] hover:underline"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" aria-hidden />
+                Back to search
+              </button>
+
+              {manualPhase === 'map' ? (
+                <div className="space-y-2">
+                  <p className="text-[13px] font-semibold text-[#1a1a1a]" id="manual-map-title">
+                    Put a pin on the map
+                  </p>
+                  <p role="status" aria-live="polite" className="text-[11px] leading-snug text-[#64748b]">
+                    {manualStatusLine}
+                  </p>
+                  <div className="h-[min(240px,45vh)] w-full overflow-hidden rounded-xl border border-[#e5e7eb] bg-[#f1f5f9]" key={manualMapNonce}>
+                    <ManualPinPickerMap
+                      center={frozenMapCenter}
+                      zoom={MANUAL_MAP_ZOOM}
+                      pin={pinLatLng}
+                      onPinChange={setPinLatLng}
+                    />
+                  </div>
+                  {pinLatLng && (
+                    <p className="text-[10px] font-mono text-[#64748b]">
+                      {pinLatLng[0].toFixed(5)}, {pinLatLng[1].toFixed(5)}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => resetManualPlacement()}
+                      className="rounded-full px-3 py-1.5 text-xs font-semibold text-[#64748b] hover:bg-[#f3f4f6]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!pinLatLng}
+                      onClick={() => goToNamePhase()}
+                      className="rounded-full bg-[#2f5fc4] px-4 py-1.5 text-xs font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Name this place
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[13px] font-semibold text-[#1a1a1a]">Name this place</p>
+                  {pinLatLng && (
+                    <p className="text-[11px] text-[#64748b] font-mono" aria-live="polite">
+                      Pin at {pinLatLng[0].toFixed(5)}, {pinLatLng[1].toFixed(5)}
+                    </p>
+                  )}
+                  <input
+                    autoFocus
+                    type="text"
+                    value={customDraft}
+                    onChange={e => setCustomDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyManualLocation();
+                      }
+                    }}
+                    placeholder="e.g. Picnic benches by Meyer"
+                    className="w-full rounded-xl border border-[#e5e7eb] bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#2f5fc4]/35"
+                  />
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualPhase('map');
+                      }}
+                      className="rounded-full px-3 py-1.5 text-xs font-semibold text-[#2f5fc4] hover:bg-[#eff6ff]"
+                    >
+                      Adjust pin
+                    </button>
+                    <span className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={() => resetManualPlacement()}
+                      className="rounded-full px-3 py-1.5 text-xs font-semibold text-[#64748b] hover:bg-[#f3f4f6]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyManualLocation()}
+                      disabled={!pinLatLng || !customDraft.trim()}
+                      className="rounded-full bg-[#f43f5e] px-4 py-1.5 text-xs font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Use this location
+                    </button>
+                  </div>
+                </div>
+              )}
+              <p className="mt-3 text-[10px] leading-snug text-[#94a3b8]">
+                Map tiles © OpenStreetMap & CARTO. Manual pins open in OpenStreetMap for reference.
+              </p>
+            </div>
+          )}
+
+          {!customMode && (
+            <div className="border-t border-[#f3f4f6] bg-[#faf9f5]/80">
+              <button
+                type="button"
+                onClick={() => beginManualPinFlow()}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-white/80"
+              >
+                <ChevronRight className="w-3.5 h-3.5 shrink-0 text-[#f43f5e]" aria-hidden />
+                <span className="text-sm font-semibold text-[#6b7280]">
+                  Can&apos;t find it?
+                  {' '}
+                  <span className="text-[#1a1a1a]">Put a pin on the map</span>
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
