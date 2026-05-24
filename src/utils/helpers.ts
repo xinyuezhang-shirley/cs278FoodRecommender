@@ -47,7 +47,10 @@ export function isPostOwner(
   postAuthorId?: string | null,
   postAuthorNestedId?: string | null,
 ): boolean {
-  const aid = postAuthorId ?? postAuthorNestedId;
+  const fromRow = typeof postAuthorId === 'string' ? postAuthorId.trim() : '';
+  const nested = typeof postAuthorNestedId === 'string' ? postAuthorNestedId.trim() : '';
+  // Prefer the post row FK; nested author can drift for anonymized shapes or partial payloads.
+  const aid = fromRow.length > 0 ? fromRow : nested;
   if (!aid) return false;
   return authIdsMatch(viewerUserId, aid) || authIdsMatch(viewerProfileId, aid);
 }

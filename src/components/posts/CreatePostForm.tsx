@@ -625,8 +625,21 @@ export function CreatePostForm({
             <div className="mx-4 mt-1 rounded-xl border border-[#eef2f6] bg-[#fafbff] px-3 py-2.5">
               <p className="text-[13px] font-semibold text-[#374151]">Posted anonymously</p>
               <p className="mt-1 text-[11px] leading-snug text-[#9ca3af]">
-                Anonymous posts stay anonymous permanently.
+                Anonymous posts stay anonymous permanently. You can still delete this post anytime.
               </p>
+              {user ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteModalOpen(true);
+                  }}
+                  disabled={submitting || deleting}
+                  className="mt-3 w-full py-2.5 rounded-xl text-[13px] font-bold text-red-600 border border-red-200 bg-red-50/80 hover:bg-red-50 transition-colors disabled:opacity-50"
+                >
+                  Delete post
+                </button>
+              ) : null}
             </div>
             <Divider />
           </>
@@ -643,10 +656,14 @@ export function CreatePostForm({
           </>
         )}
 
-        {editPost && (
+        {/* Anonymous edits use Delete inside the “Posted anonymously” card above. */}
+        {editPost && !editPost.is_anonymous && (
           <>
             <Divider />
             <div className="px-4 py-4">
+              <p className="mb-2 text-[11px] font-semibold text-[#9ca3af] uppercase tracking-wide">
+                Danger zone
+              </p>
               <button
                 type="button"
                 onClick={() => {

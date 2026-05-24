@@ -140,6 +140,9 @@ export function MapPage() {
       const posts = await getPaginatedPosts({}, user?.id);
       if (reqSeq !== loadSeqRef.current) return;
       setAllPosts(posts.filter(p => p.latitude != null && p.longitude != null));
+    } catch (e: unknown) {
+      console.error('[Nommi] Map loadPosts failed:', e);
+      // Preserve pins on silent realtime refetch failures.
     } finally {
       if (!silent && reqSeq === loadSeqRef.current) setLoading(false);
     }

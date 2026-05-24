@@ -47,6 +47,8 @@ export function ProfilePage() {
   const [joiningCircleId, setJoiningCircleId] = useState<string | null>(null);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
+  /** Shown when own-profile like fails (`reactToPost`). */
+  const [likeNotice, setLikeNotice] = useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
   const [settingsForm, setSettingsForm] = useState({
@@ -270,6 +272,7 @@ export function ProfilePage() {
     }
     try {
       const result = await reactToPost(post.id, user.id, 'like');
+      setLikeNotice(null);
       const apply = (p: Post): Post =>
         p.id !== post.id
           ? p
@@ -281,8 +284,16 @@ export function ProfilePage() {
             };
       setPosts(prev => prev.map(apply));
       setSelectedPost(prev => (prev ? apply(prev) : null));
-    } catch {
-      void refreshSavedIntents();
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : 'Could not save like. Try signing out/in, then check the browser console.';
+      console.error('[Nommi] reactToPost(like) failed:', e);
+      setPosts(prev => prev.map(p => (p.id !== post.id ? p : post)));
+      setSelectedPost(prev => (prev?.id === post.id ? post : prev));
+      setLikeNotice(msg);
+      window.setTimeout(() => setLikeNotice(null), 14000);
     }
   }
 
@@ -431,6 +442,15 @@ export function ProfilePage() {
           </button>
         )}
       </div>
+
+      {likeNotice && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-[12px] font-semibold leading-snug text-red-900 whitespace-pre-wrap"
+        >
+          {likeNotice}
+        </div>
+      )}
 
       <div className="mb-5">
         <div className="bg-white rounded-[28px] p-5 border border-[#e5e7eb] shadow-[0_12px_32px_rgba(47,95,196,0.10)]">

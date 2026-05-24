@@ -35,6 +35,8 @@ export function FeedPage() {
   const [foodCatOpen, setFoodCatOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const loadSeqRef = useRef(0);
+  /** Shown when `reactToPost` fails (RLS, stale session, or missing migration `015`). */
+  const [likeNotice, setLikeNotice] = useState<string | null>(null);
 
   const { request: requestLocation, userLocation } = useGeolocation();
 
@@ -106,8 +108,10 @@ export function FeedPage() {
         if (reqSeq !== loadSeqRef.current) return;
         setSavedPostIds(new Set());
       }
-    } catch {
+    } catch (e: unknown) {
+      console.error('[Nommi] Feed loadPosts failed:', e);
       if (!silent && reqSeq === loadSeqRef.current) setError('Failed to load posts. Please try again.');
+      // Silent refresh (e.g. realtime): keep previous posts so truncation bugs do not flicker counters.
     } finally {
       if (!silent && reqSeq === loadSeqRef.current) setLoading(false);
     }
@@ -125,9 +129,17 @@ export function FeedPage() {
     })));
     try {
       const result = await reactToPost(post.id, user.id, 'like');
+      setLikeNotice(null);
       setAllPosts(prev => prev.map(p => (p.id !== post.id ? p : { ...p, ...result })));
-    } catch {
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : 'Could not save like. Try signing out/in, then check the browser console.';
+      console.error('[Nommi] reactToPost(like) failed:', e);
       setAllPosts(prev => prev.map(p => (p.id !== post.id ? p : post)));
+      setLikeNotice(msg);
+      window.setTimeout(() => setLikeNotice(null), 14000);
     }
   }
 
@@ -229,6 +241,15 @@ export function FeedPage() {
             </div>
           )}
         </div>
+
+        {likeNotice && (
+          <div
+            role="alert"
+            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-[12px] font-semibold leading-snug text-red-900 whitespace-pre-wrap"
+          >
+            {likeNotice}
+          </div>
+        )}
 
         <form onSubmit={handleSearchSubmit} className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#6f90d8] pointer-events-none" />

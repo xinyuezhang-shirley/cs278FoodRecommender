@@ -44,6 +44,8 @@ export function CollectionsPage() {
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [shareTarget, setShareTarget] = useState<Post | null>(null);
+  /** Shown when liking fails (session, RLS, or Postgres needs migration `015`). */
+  const [likeNotice, setLikeNotice] = useState<string | null>(null);
 
   const syncCollectionsQuiet = useCallback(async () => {
     if (!user?.id) return;
@@ -115,6 +117,7 @@ export function CollectionsPage() {
     }));
     try {
       const result = await reactToPost(post.id, user.id, 'like');
+      setLikeNotice(null);
       const apply = (pRow: Post): Post =>
         pRow.id !== post.id
           ? pRow
@@ -134,8 +137,15 @@ export function CollectionsPage() {
         want_to_go: prev.want_to_go.map(apply),
         favorite: prev.favorite.map(apply),
       }));
-    } catch {
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : 'Could not save like. Try signing out/in, then check the browser console.';
+      console.error('[Nommi] reactToPost(like) failed:', e);
       void syncCollectionsQuiet();
+      setLikeNotice(msg);
+      window.setTimeout(() => setLikeNotice(null), 14000);
     }
   }
 
@@ -214,6 +224,15 @@ export function CollectionsPage() {
           })}
         </div>
       </header>
+
+      {likeNotice && (
+        <div
+          role="alert"
+          className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-[12px] font-semibold leading-snug text-red-900 whitespace-pre-wrap"
+        >
+          {likeNotice}
+        </div>
+      )}
 
       {activeMeta && SectionIcon && (
         <section

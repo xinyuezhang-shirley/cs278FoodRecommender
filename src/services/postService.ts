@@ -1,7 +1,7 @@
 import type {
   Post, PostFilter, CreatePostData, ReactionType, PostType,
 } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { profileLiteFromRow } from './profileHelpers';
 import { sanitizeText, sanitizeTags } from '../utils/sanitize';
 import { isPostOwner } from '../utils/helpers';
@@ -19,6 +19,55 @@ function viewerReactionsForUser(
         .map((r) => r.type as ReactionType),
     ),
   ];
+}
+
+/** PostgREST caps result rows (~1000 by default); paginate so feeds do not truncate reaction/comment aggregates. */
+const ENRICH_PAGE_SIZE = 900;
+
+async function fetchAllReactionRowsForPosts(
+  postIds: string[],
+): Promise<Array<{ id: string; post_id: string; user_id: string; type: string }>> {
+  if (postIds.length === 0) return [];
+  const aggregated: Array<{ id: string; post_id: string; user_id: string; type: string }> = [];
+  let from = 0;
+  for (;;) {
+    const { data: chunk, error } = await supabase
+      .from('reactions')
+      .select('id, post_id, user_id, type')
+      .in('post_id', postIds)
+      .order('id', { ascending: true })
+      .range(from, from + ENRICH_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (chunk ?? []) as Array<{ id: string; post_id: string; user_id: string; type: string }>;
+    if (rows.length === 0) break;
+    aggregated.push(...rows);
+    if (rows.length < ENRICH_PAGE_SIZE) break;
+    from += rows.length;
+  }
+  return aggregated;
+}
+
+async function fetchAllCommentsForPosts(
+  postIds: string[],
+): Promise<Array<{ id: string; post_id: string }>> {
+  if (postIds.length === 0) return [];
+  const aggregated: Array<{ id: string; post_id: string }> = [];
+  let from = 0;
+  for (;;) {
+    const { data: chunk, error } = await supabase
+      .from('comments')
+      .select('id, post_id')
+      .in('post_id', postIds)
+      .order('id', { ascending: true })
+      .range(from, from + ENRICH_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (chunk ?? []) as Array<{ id: string; post_id: string }>;
+    if (rows.length === 0) break;
+    aggregated.push(...rows);
+    if (rows.length < ENRICH_PAGE_SIZE) break;
+    from += rows.length;
+  }
+  return aggregated;
 }
 
 function escapeIlike(s: string): string {
@@ -249,21 +298,16 @@ export async function enrichPosts(rows: Record<string, unknown>[], currentUserId
   const postIds = rows.map(r => r.id as string);
   const authorIds = [...new Set(rows.map(r => r.author_id as string))];
 
-  const [reactionsResult, commentsResult, profilesResult] = await Promise.all([
-    supabase.from('reactions').select('id, post_id, user_id, type').in('post_id', postIds),
-    supabase.from('comments').select('post_id').in('post_id', postIds),
+  const [reactionRows, commentRows, profilesResult] = await Promise.all([
+    fetchAllReactionRowsForPosts(postIds),
+    fetchAllCommentsForPosts(postIds),
     supabase
       .from('profiles')
       .select('id, username, avatar_url, bio, food_personality, created_at')
       .in('id', authorIds),
   ]);
 
-  if (reactionsResult.error) throw new Error(reactionsResult.error.message);
-  if (commentsResult.error) throw new Error(commentsResult.error.message);
   if (profilesResult.error) throw new Error(profilesResult.error.message);
-
-  const reactionRows = reactionsResult.data ?? [];
-  const commentRows = commentsResult.data ?? [];
   const profileRows = profilesResult.data ?? [];
 
   const profileMap = new Map(profileRows.map(p => [p.id, profileLiteFromRow(p)]));
@@ -290,6 +334,10 @@ export async function getPaginatedPosts(
   filter: PostFilter = {},
   currentUserId?: string
 ): Promise<Post[]> {
+  if (!isSupabaseConfigured) {
+    return getFallbackPosts(filter, currentUserId);
+  }
+
   try {
   if (filter.circleId) {
     const { data: cpRows, error: cpErr } = await supabase
@@ -349,8 +397,9 @@ export async function getPaginatedPosts(
   if (error) throw new Error(error.message);
   if ((rows ?? []).length === 0) return getFallbackPosts(filter, currentUserId);
   return enrichPosts((rows ?? []) as Record<string, unknown>[], currentUserId);
-  } catch {
-    return getFallbackPosts(filter, currentUserId);
+  } catch (e) {
+    console.error('[Nommi] getPaginatedPosts failed:', e);
+    throw e;
   }
 }
 
@@ -529,46 +578,74 @@ export async function deletePost(id: string, currentUserId: string): Promise<voi
   if (!data) throw new Error('Post not found or not authorized to delete this post');
 }
 
+/** Turn PostgREST/Postgres failures into actionable messages (migration / auth hints). */
+function reactionWriteError(insErr: { message?: string; code?: string }): Error {
+  const msg = insErr.message ?? 'Reaction failed.';
+  const code = insErr.code ?? '';
+  const low = msg.toLowerCase();
+
+  if (code === '42501' || low.includes('row-level security')) {
+    return new Error(`${msg} Likes require a signed-in session (same JWT as saves). Try signing out and back in.`);
+  }
+  if (
+    code === '23505'
+    || low.includes('duplicate key')
+    || msg.includes('reactions_post_id_user_id_key')
+    || msg.includes('reactions_post_user_type_key')
+  ) {
+    return new Error(
+      `${msg}\n\n`
+      + 'Likes failed because Postgres only allows ONE reaction row per account per post (often after you tapped “still there”). '
+      + 'Run `supabase/migrations/015_reactions_per_type_unique.sql` in the Supabase SQL Editor (drops `reactions_post_id_user_id_key`, '
+      + 'adds unique on `post_id, user_id, type` so Like and Still there can both exist).\n'
+      + 'Reload the app afterward.',
+    );
+  }
+  return new Error(msg);
+}
+
 export async function reactToPost(
   postId: string,
   userId: string,
   type: ReactionType
 ): Promise<{ like_count: number; still_there_count: number; viewer_reactions: ReactionType[] }> {
-  const { data: rowList, error: fetchErr } = await supabase
+  const { data: mineRows, error: mineErr } = await supabase
     .from('reactions')
-    .select('id')
+    .select('id, type')
     .eq('post_id', postId)
-    .eq('user_id', userId)
-    .eq('type', type)
-    .limit(1);
+    .eq('user_id', userId);
 
-  if (fetchErr) {
-    const reactions = SEED_REACTIONS.filter(r => r.post_id === postId);
-    const has = reactions.some(r => String(r.user_id) === userId && r.type === type);
-    let nextRows = [...reactions];
-    if (has) {
-      nextRows = nextRows.filter(r => !(String(r.user_id) === userId && r.type === type));
-    } else {
-      nextRows = [...nextRows, { id: 'local', post_id: postId, user_id: userId, type }];
+  if (mineErr) {
+    if (!isSupabaseConfigured) {
+      const reactions = SEED_REACTIONS.filter(r => r.post_id === postId);
+      const has = reactions.some(r => String(r.user_id) === userId && r.type === type);
+      let nextRows = [...reactions];
+      if (has) {
+        nextRows = nextRows.filter(r => !(String(r.user_id) === userId && r.type === type));
+      } else {
+        nextRows = [...nextRows, { id: 'local', post_id: postId, user_id: userId, type }];
+      }
+      const mine = viewerReactionsForUser(nextRows, userId);
+      return {
+        like_count: Math.max(0, nextRows.filter(r => r.type === 'like').length),
+        still_there_count: Math.max(0, nextRows.filter(r => r.type === 'still_there').length),
+        viewer_reactions: mine,
+      };
     }
-    const mine = viewerReactionsForUser(nextRows, userId);
-    return {
-      like_count: Math.max(0, nextRows.filter(r => r.type === 'like').length),
-      still_there_count: Math.max(0, nextRows.filter(r => r.type === 'still_there').length),
-      viewer_reactions: mine,
-    };
+    throw new Error(mineErr.message);
   }
 
-  const existing = rowList?.[0];
+  const mine = mineRows ?? [];
+  const hit = mine.find(r => r.type === type);
 
-  if (existing) {
-    const { error: delErr } = await supabase.from('reactions').delete().eq('id', existing.id);
-    if (delErr) throw new Error(delErr.message);
+  if (hit) {
+    const { error: delErr } = await supabase.from('reactions').delete().eq('id', hit.id);
+    if (delErr) throw reactionWriteError(delErr);
   } else {
     const { error: insErr } = await supabase
       .from('reactions')
       .insert({ post_id: postId, user_id: userId, type });
-    if (insErr) throw new Error(insErr.message);
+    if (insErr) throw reactionWriteError(insErr);
   }
 
   const { data: all, error } = await supabase
