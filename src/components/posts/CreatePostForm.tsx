@@ -398,7 +398,6 @@ export function CreatePostForm({
             expires_at: form.expires_at,
             circle_id: form.circle_id,
           },
-          user.id,
         );
         onPostUpdated?.(updated);
         onSuccess(updated.id);
@@ -416,7 +415,7 @@ export function CreatePostForm({
       if (import.meta.env.DEV) {
         console.log('[CreatePost] submit', { postAnonymously, payloadIsAnonymous: payload.is_anonymous });
       }
-      const post = await createPost(payload, user.id);
+      const post = await createPost(payload);
       if (circleTarget) {
         try {
           await sharePostToCircle(post.id, circleTarget, user.id);
@@ -439,7 +438,7 @@ export function CreatePostForm({
     setDeleteError(null);
     setDeleting(true);
     try {
-      await deletePost(editPost.id, user.id);
+      await deletePost(editPost.id);
       setDeleteModalOpen(false);
       onPostDeleted?.();
     } catch (err: unknown) {

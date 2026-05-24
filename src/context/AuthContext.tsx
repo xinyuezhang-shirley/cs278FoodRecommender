@@ -8,7 +8,8 @@ import {
   getCurrentSession,
   signIn,
   signOut,
-  signUp,
+  signUp as registerAccountWithSupabase,
+  type SignUpOutcome,
 } from '../services/authService';
 import { supabase } from '../lib/supabase';
 import type { SignInData, SignUpData } from '../types';
@@ -18,7 +19,7 @@ interface AuthContextValue {
   profile: UserProfile | null;
   loading: boolean;
   signIn: (data: SignInData) => Promise<void>;
-  signUp: (data: SignUpData) => Promise<void>;
+  signUp: (data: SignUpData) => Promise<SignUpOutcome>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -86,11 +87,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const handleSignUp = useCallback(async (data: SignUpData) => {
-    const snap = await signUp(data);
-    setUser(snap.user);
-    setProfile(snap.profile);
+  const handleSignUp = useCallback(async (data: SignUpData): Promise<SignUpOutcome> => {
+    const outcome = await registerAccountWithSupabase(data);
+    if (outcome.status === 'signed_in') {
+      setUser(outcome.auth.user);
+      setProfile(outcome.auth.profile);
+    } else {
+      setUser(null);
+      setProfile(null);
+    }
     setLoading(false);
+    return outcome;
   }, []);
 
   const handleSignOut = useCallback(async () => {

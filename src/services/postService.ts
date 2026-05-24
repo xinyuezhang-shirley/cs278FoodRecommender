@@ -6,6 +6,7 @@ import { profileLiteFromRow } from './profileHelpers';
 import { sanitizeText, sanitizeTags } from '../utils/sanitize';
 import { isPostOwner } from '../utils/helpers';
 import { SEED_COMMENTS, SEED_POSTS, SEED_PROFILES, SEED_REACTIONS } from './mockData';
+import { ensureAuthUidAndProfileRow, getAuthUidForWrite } from './authService';
 
 function viewerReactionsForUser(
   reactions: { user_id: string; type: string }[],
@@ -119,6 +120,18 @@ function pickAnonymousFromRow(row: Record<string, unknown>, requestedAtCreate: b
   return requestedAtCreate;
 }
 
+function formatPostsWriteRlsRejected(message: string, code?: string): Error {
+  const low = message.toLowerCase();
+  const rls = code === '42501' || low.includes('row-level security');
+  if (!rls) return new Error(message);
+  return new Error(
+    `${message}\n\n`
+      + 'Post writes require JWT `auth.uid()` to match `posts.author_id` (`profiles.id`). '
+      + 'Apply migrations `021_posts_rls_auth_uid_and_profiles_trigger.sql` and '
+      + '`022_profiles_rls_authenticated_uid.sql`, then sign out/in.',
+  );
+}
+
 async function insertPostPayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
   let insert = { ...payload };
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -127,7 +140,7 @@ async function insertPostPayload(payload: Record<string, unknown>): Promise<Reco
 
     const errMsg = error?.message ?? 'Could not create post.';
     if (!isPostsUrlColumnMissingError(error) && !isPostsAnonymousColumnMissingError(error)) {
-      throw new Error(errMsg);
+      throw formatPostsWriteRlsRejected(errMsg, error?.code);
     }
 
     if (isPostsAnonymousColumnMissingError(error) && 'is_anonymous' in insert) {
@@ -176,7 +189,7 @@ async function updatePostPayload(id: string, authorId: string, patch: Record<str
 
     const errMsg = error?.message ?? 'Could not update post.';
     if (!isPostsUrlColumnMissingError(error)) {
-      throw new Error(errMsg);
+      throw formatPostsWriteRlsRejected(errMsg, error?.code);
     }
 
     if ('google_maps_url' in patchToSend) {
@@ -488,14 +501,13 @@ export async function getPostsByAuthor(
   return enrichPosts((rows ?? []) as Record<string, unknown>[], viewerUserId ?? undefined);
 }
 
-export async function createPost(
-  data: CreatePostData,
-  authorId: string
-): Promise<Post> {
+export async function createPost(data: CreatePostData): Promise<Post> {
   if (!data.title.trim()) throw new Error('Title is required');
   if (!data.location_name.trim()) throw new Error('Location is required');
   if (data.is_free_food && !data.expires_at) throw new Error('Expiration time is required for free food posts');
   if (data.description && data.description.length > 500) throw new Error('Description must be 500 characters or less');
+
+  const authorId = await ensureAuthUidAndProfileRow('create post');
 
   const insert = {
     author_id: authorId,
@@ -535,8 +547,9 @@ export async function createPost(
 export async function updatePost(
   id: string,
   data: Partial<CreatePostData>,
-  currentUserId: string
 ): Promise<Post> {
+  const currentUserId = await getAuthUidForWrite('update post');
+
   const patch: Record<string, unknown> = {};
 
   if (data.type !== undefined) patch.type = data.type;
@@ -565,7 +578,8 @@ export async function updatePost(
   return enriched;
 }
 
-export async function deletePost(id: string, currentUserId: string): Promise<void> {
+export async function deletePost(id: string): Promise<void> {
+  const currentUserId = await getAuthUidForWrite('delete post');
   const { data, error } = await supabase
     .from('posts')
     .delete()
@@ -574,7 +588,7 @@ export async function deletePost(id: string, currentUserId: string): Promise<voi
     .select('id')
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
+  if (error) throw formatPostsWriteRlsRejected(error.message, error.code);
   if (!data) throw new Error('Post not found or not authorized to delete this post');
 }
 

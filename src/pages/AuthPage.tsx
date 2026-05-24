@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
@@ -17,17 +17,29 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingVerifyEmail(null);
+  }, [mode]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setError(null);
+    setPendingVerifyEmail(null);
     setLoading(true);
 
     try {
       if (mode === 'login') {
         await signIn({ email, password });
       } else {
-        await signUp({ email, password, username });
+        const outcome = await signUp({ email, password, username });
+        if (outcome.status === 'pending_email_verification') {
+          setPendingVerifyEmail(outcome.email);
+          setPassword('');
+          return;
+        }
       }
       navigate('/app/feed', { replace: true });
     } catch (err: unknown) {
@@ -72,8 +84,40 @@ export function AuthPage({ mode }: AuthPageProps) {
           </div>
         ) : null}
 
+        {mode === 'signup' && pendingVerifyEmail && (
+          <div
+            className="mb-4 rounded-2xl border border-teal-200/90 bg-teal-50 px-3 py-3 text-[13px] leading-snug text-teal-950"
+            role="status"
+          >
+            <p className="font-black text-[#115e59] mb-2">Almost there — confirm your email</p>
+            <p className="font-medium mb-3">
+              We sent a verification link to{' '}
+              <span className="font-semibold text-[#0f766e] break-all">{pendingVerifyEmail}</span>.
+              Check your inbox and your spam / junk folder if you don&apos;t see it yet. Open that
+              email and tap the link. After it succeeds,{' '}
+              <Link to="/login" className="font-bold text-[#2f5fc4] underline underline-offset-2">
+                sign in here
+              </Link>{' '}
+              with the password you just chose.
+            </p>
+            <button
+              type="button"
+              className="text-xs font-bold text-[#64748b] hover:text-[#1e293b] underline underline-offset-2"
+              onClick={() => {
+                setPendingVerifyEmail(null);
+                setUsername('');
+              }}
+            >
+              Use a different email
+            </button>
+          </div>
+        )}
+
         {error && (
-          <div className="mb-4 px-3 py-2.5 bg-red-50 text-red-600 text-sm rounded-2xl" role="alert">
+          <div
+            className="mb-4 px-3 py-2.5 bg-red-50 text-red-600 text-sm rounded-2xl whitespace-pre-line leading-snug"
+            role="alert"
+          >
             {error}
           </div>
         )}

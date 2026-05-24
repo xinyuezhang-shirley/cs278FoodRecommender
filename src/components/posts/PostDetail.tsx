@@ -215,7 +215,7 @@ export function PostDetail({
     if (!window.confirm('Delete this post? This cannot be undone.')) return;
     setDeleting(true);
     try {
-      await deletePost(post.id, user.id);
+      await deletePost(post.id);
       onPostDeleted?.();
       onClose();
     } catch (err: unknown) {

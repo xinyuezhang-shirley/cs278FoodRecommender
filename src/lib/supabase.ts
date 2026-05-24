@@ -33,3 +33,17 @@ export const supabase = createClient(
     },
   },
 );
+
+/**
+ * GoTrue persists the session under sb-<project-subdomain>-auth-token (matches createClient hostname).
+ */
+export function getPersistedGoTrueStorageKey(): string {
+  const raw = normalizeSupabaseUrl(isSupabaseConfigured ? url : SUPABASE_URL_FALLBACK);
+  try {
+    const hostname = new URL(raw).hostname;
+    const projectRef = hostname.split('.')[0] || 'unknown';
+    return `sb-${projectRef}-auth-token`;
+  } catch {
+    return 'sb-unknown-auth-token';
+  }
+}
