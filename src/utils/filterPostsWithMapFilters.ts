@@ -56,7 +56,9 @@ function inCampusBounds(lat: number, lng: number): boolean {
  * Applies the same Nommi filters on any post list (Feed = all posts, Map = geo-tagged subset).
  * Distance constrains only when `userLocation` is set (otherwise the option is ineffective; UI should disable picks).
  *
- * Note: Feed keeps historical free-food rows when 🎁 is selected — map narrows recent free-food with {@link isRecentFreeFood}.
+ * Note: Feed keeps historical free-food rows only when 🎁 is selected (via `post_kind` filter) —
+ * map narrows recent free-food with {@link isRecentFreeFood}.
+ * Sorting does not elevate free-food over other kinds in the “All” feed; only Recent vs Popular applies.
  */
 export function filterAndSortPosts(
   allPosts: Post[],
@@ -130,16 +132,17 @@ export function filterAndSortPosts(
   const popularScore = (p: Post) =>
     (p.like_count ?? 0) + (p.comment_count ?? 0) + (p.still_there_count ?? 0);
 
+  /** Strictly honor Recent / Popular. (Do not pin free-food globally — seeded demo gifts would bury new recs/events.) */
   result = [...result].sort((a, b) => {
-    const fa = a.is_free_food ? 1 : 0;
-    const fb = b.is_free_food ? 1 : 0;
-    if (fb !== fa) return fb - fa;
     if (filters.sortBy === 'popular') {
-      return popularScore(b) - popularScore(a);
+      const sd = popularScore(b) - popularScore(a);
+      if (sd !== 0) return sd;
     }
     const ta = new Date(a.created_at ?? 0).getTime();
     const tb = new Date(b.created_at ?? 0).getTime();
-    return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+    const td = (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+    if (td !== 0) return td;
+    return a.id.localeCompare(b.id);
   });
 
   return result;
