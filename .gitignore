@@ -13,6 +13,9 @@ dist
 dist-ssr
 *.local
 
+# Optional local seed corpus exports (npm run seed:demo:export-json)
+scripts/seed/output/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

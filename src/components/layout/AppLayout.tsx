@@ -17,6 +17,13 @@ export function AppLayout() {
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const lastSwipeAtRef = useRef(0);
 
+  /** Must run every render — keep above any conditional returns (Rules of Hooks). */
+  useEffect(() => {
+    const openCreate = () => setShowCreate(true);
+    window.addEventListener('nommi-open-create-post', openCreate);
+    return () => window.removeEventListener('nommi-open-create-post', openCreate);
+  }, []);
+
   const TAB_ORDER = ['/app/map', '/app/feed', '/app/community', '/app/chat', '/app/profile'] as const;
 
   function currentTabIndex(path: string): number {
@@ -74,12 +81,6 @@ export function AppLayout() {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-
-  useEffect(() => {
-    const openCreate = () => setShowCreate(true);
-    window.addEventListener('nommi-open-create-post', openCreate);
-    return () => window.removeEventListener('nommi-open-create-post', openCreate);
-  }, []);
 
   return (
     <ChatUnreadProvider userId={user.id}>
