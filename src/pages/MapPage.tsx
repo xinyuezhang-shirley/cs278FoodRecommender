@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Post } from '../types';
 import { getPaginatedPosts } from '../services/postService';
 import { useAuth } from '../context/AuthContext';
-import { isExpired } from '../utils/helpers';
 import { MapView } from '../components/map/MapView';
 import { groupPostsByLocation, type PlaceGroup } from '../utils/groupPostsByLocation';
 import { MapSearchBar } from '../components/map/MapSearchBar';
@@ -20,7 +19,10 @@ import { FeedAdvancedFiltersSheet } from '../components/feed/FeedAdvancedFilters
 import { FeedPrimaryFilterRow } from '../components/feed/FeedPrimaryFilterRow';
 import { FeedActiveFilterChips } from '../components/feed/FeedActiveFilterChips';
 import { FeedCompactSortButton } from '../components/feed/FeedCompactSortButton';
-import { countActiveNommiFilters } from '../utils/filterPostsWithMapFilters';
+import {
+  countActiveNommiFilters,
+  isRecentFreeFood,
+} from '../utils/filterPostsWithMapFilters';
 
 const DEFAULT_CENTER: [number, number] = [37.4290, -122.1685];
 const DEFAULT_ZOOM = 14;
@@ -63,7 +65,27 @@ export function MapPage() {
     patchAdvancedFilters,
     resetAdvancedFilters,
   } = useNommiFilters();
-  const filteredPosts = useNommiFilteredPosts(allPosts, userLocation);
+  /** Same Nommi chips/search/distance/expiry semantics as Feed, before map-only recent-free-food narrowing. */
+  const nominalFilteredPosts = useNommiFilteredPosts(allPosts, userLocation);
+
+  const recentFreeVisibleSubset = useMemo(
+    () => nominalFilteredPosts.filter(isRecentFreeFood),
+    [nominalFilteredPosts],
+  );
+
+  /** Pins, sheets, and detail handoffs must use this single list — never diverge counters from `groupPostsByLocation(this)`. */
+  const visibleMapPosts = useMemo(() => (
+    filters.post_kind === 'free_food' ? recentFreeVisibleSubset : nominalFilteredPosts
+  ), [filters.post_kind, nominalFilteredPosts, recentFreeVisibleSubset]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || filters.post_kind !== 'free_food') return;
+    // Temporary diagnostics — remove when map free-food regressions settle.
+    // eslint-disable-next-line no-console -- intentional debug instrumentation
+    console.log('free food now count', visibleMapPosts.length);
+    // eslint-disable-next-line no-console -- intentional debug instrumentation
+    console.log(visibleMapPosts.map(p => ({ title: p.title, created_at: p.created_at })));
+  }, [filters.post_kind, visibleMapPosts]);
 
   const activeFilterCount = useMemo(
     () => countActiveNommiFilters(filters, userLocation ?? null),
@@ -141,8 +163,8 @@ export function MapPage() {
     onEvent: () => void loadPosts(true),
   });
 
-  const placeGroups = useMemo(() => groupPostsByLocation(filteredPosts), [filteredPosts]);
-  const freeActiveCount = allPosts.filter(p => p.is_free_food && !isExpired(p.expires_at)).length;
+  const placeGroups = useMemo(() => groupPostsByLocation(visibleMapPosts), [visibleMapPosts]);
+  const freeActiveCount = recentFreeVisibleSubset.length;
 
   useEffect(() => {
     setSelectedPlace(prev => {

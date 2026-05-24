@@ -104,6 +104,25 @@ function postTimelineIso(rows: GeneratedPostRow[]): string[] {
   return raw.map(ms => new Date(Math.floor(ms)).toISOString());
 }
 
+/** Align seeded free-food `created_at` with Map “recent” UX (deterministic pseudo-random offsets). */
+const SEED_FREE_FOOD_RECENT_WINDOW_HOURS = 48;
+
+function overlayRecentFreeFoodCreatedAt(
+  rows: GeneratedPostRow[],
+  isoAlignedToRowOrder: string[],
+): string[] {
+  const next = [...isoAlignedToRowOrder];
+  const now = Date.now();
+  const windowMs = SEED_FREE_FOOD_RECENT_WINDOW_HOURS * 60 * 60 * 1000;
+  rows.forEach((row, idx) => {
+    if (row.type !== 'free_food') return;
+    const frac = ((idx * 1103515245 + 12345) >>> 0) / 4294967295;
+    const t = Math.floor(now - windowMs * (0.04 + frac * 0.92));
+    next[idx] = new Date(t).toISOString();
+  });
+  return next;
+}
+
 async function upsertSeedUser(admin: ReturnType<typeof createClient>, params: {
   email: string;
   password: string;
@@ -267,7 +286,8 @@ export async function runSeedCli() {
 
   const resolveRest = restByName(bundle.restaurants);
 
-  const times = postTimelineIso(bundle.posts);
+  let times = postTimelineIso(bundle.posts);
+  times = overlayRecentFreeFoodCreatedAt(bundle.posts, times);
 
   /** posts */
   const postIdsOrdered: string[] = [];

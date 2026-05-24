@@ -65,7 +65,11 @@ export function Modal({ open, onClose, children, title, fullScreen = false, elev
             </button>
           </div>
         )}
-        {children}
+        {fullScreen ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+        ) : (
+          children
+        )}
       </div>
     </div>
   );

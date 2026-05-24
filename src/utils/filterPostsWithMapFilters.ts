@@ -2,6 +2,41 @@ import type { Post } from '../types';
 import type { MapFilters } from '../types/mapFilters';
 import { haversineDistanceMiles, DISTANCE_MAX_MILES, isExpired } from './helpers';
 
+/** Map “Free food now” cutoff — aligns with nominal `created_at` window only (map applies this separately from Feed). */
+export const MAP_FREE_FOOD_CREATED_WITHIN_HOURS = 48;
+
+function cuisineHasFreeFoodCue(tags: string[] | undefined): boolean {
+  if (!Array.isArray(tags)) return false;
+  return tags.some(t => {
+    const x = String(t).trim().toLowerCase();
+    return x === 'free-food' || x === 'free food';
+  });
+}
+
+/**
+ * Nommi map “recent free food” — single source used for badge count, pins, sheets, detail handoff.
+ * Uses DB `created_at` only (`Date.parse` / `getTime`; ISO `timestamptz` from Postgres is fine).
+ */
+export function isRecentFreeFood(post: Post, nowMs = Date.now()): boolean {
+  if (isExpired(post.expires_at)) return false;
+
+  const createdAt = new Date(post.created_at).getTime();
+  const cutoff =
+    nowMs - MAP_FREE_FOOD_CREATED_WITHIN_HOURS * 60 * 60 * 1000;
+
+  const isFreeFood =
+    post.type === 'free_food'
+    || post.is_free_food
+    || cuisineHasFreeFoodCue(post.cuisine_tags);
+
+  return (
+    isFreeFood
+    && Number.isFinite(createdAt)
+    && createdAt <= nowMs
+    && createdAt >= cutoff
+  );
+}
+
 /** Rough Stanford main campus + adjacent row — pins outside are hidden when campus filter is on. */
 const CAMPUS_BOUNDS = {
   latMin: 37.415,
@@ -20,6 +55,8 @@ function inCampusBounds(lat: number, lng: number): boolean {
 /**
  * Applies the same Nommi filters on any post list (Feed = all posts, Map = geo-tagged subset).
  * Distance constrains only when `userLocation` is set (otherwise the option is ineffective; UI should disable picks).
+ *
+ * Note: Feed keeps historical free-food rows when 🎁 is selected — map narrows recent free-food with {@link isRecentFreeFood}.
  */
 export function filterAndSortPosts(
   allPosts: Post[],

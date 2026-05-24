@@ -10,6 +10,31 @@ import { CuisineTagsFormField } from './CuisineTagsFormField';
 import { LocationPicker, type LocationSelection } from './LocationPicker';
 import { Modal } from '../ui/Modal';
 import type { LocationPickSource } from '../../types';
+import { MAX_POST_IMAGE_DATA_URL_CHARS } from '../../utils/imageCompress';
+
+/** Mobile Safari/WebKit often surface failed fetches as TypeError with message “Load failed”. */
+function formatSubmitError(err: unknown): string {
+  const msg =
+    err instanceof Error
+      ? err.message
+      : typeof err === 'object'
+        && err !== null
+        && 'message' in err
+        && typeof (err as { message: unknown }).message === 'string'
+        ? (err as { message: string }).message
+        : '';
+
+  const trimmed = msg.trim();
+  const isLoadFail =
+    /^load failed$/i.test(trimmed)
+    || /^failed to fetch$/i.test(trimmed)
+    || /network\s*error/i.test(trimmed);
+
+  if (isLoadFail) {
+    return 'Network error (“Load failed”). Check connection, VPN, LAN vs localhost URLs, Supabase reachable from this device, and Google Maps key referrer rules if searching places.';
+  }
+  return msg.trim();
+}
 
 // ─── Post type selector ────────────────────────────────────────────────────
 
@@ -261,6 +286,21 @@ export function CreatePostForm({
     if (editPostModeKey === '__draft__') setPostAnonymously(false);
   }, [editPostModeKey]);
 
+  /** iOS keyboards + autoFocus cause layout churn; coarse pointers shouldn’t autofocus compose title. */
+  const [finePointerAutofocusTitle, setFinePointerAutofocusTitle] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const sync = () => setFinePointerAutofocusTitle(mq.matches);
+    sync();
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', sync);
+    else mq.addListener(sync);
+    return () => {
+      if (typeof mq.removeEventListener === 'function') mq.removeEventListener('change', sync);
+      else mq.removeListener(sync);
+    };
+  }, []);
+
   function setField<K extends keyof CreatePostData>(key: K, value: CreatePostData[K]) {
     setForm(prev => {
       const next = { ...prev, [key]: value };
@@ -324,6 +364,14 @@ export function CreatePostForm({
 
   async function handlePost() {
     if (!user || !baseCanPost) return;
+    if (typeof form.image_url === 'string' && form.image_url.startsWith('data:')) {
+      if (form.image_url.length > MAX_POST_IMAGE_DATA_URL_CHARS) {
+        setError(
+          'This photo is too large to embed in a post over the network. Pick a smaller image or paste an HTTPS image URL instead.',
+        );
+        return;
+      }
+    }
     if (form.cuisine_tags.length === 0) {
       setError('Please select at least one food category so others can find your post.');
       return;
@@ -378,7 +426,9 @@ export function CreatePostForm({
       }
       onSuccess(post.id);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : editPost ? 'Failed to save changes' : 'Failed to create post');
+      setError(
+        formatSubmitError(err) || (editPost ? 'Failed to save changes' : 'Failed to create post'),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -393,17 +443,19 @@ export function CreatePostForm({
       setDeleteModalOpen(false);
       onPostDeleted?.();
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete post');
+      setDeleteError(formatSubmitError(err) || 'Failed to delete post');
     } finally {
       setDeleting(false);
     }
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-white">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
 
-      {/* ── Top bar ── */}
-      <div className="flex items-center px-4 py-3 border-b border-[#f3f4f6] sticky top-0 z-10 bg-white">
+      {/* ── Top bar (safe-area + sticky; fills modal flex chain on mobile) ── */}
+      <div
+        className="flex shrink-0 items-center border-b border-[#f3f4f6] bg-white px-4 pb-3 sticky top-0 z-30 pt-[max(12px,env(safe-area-inset-top,0px))]"
+      >
         <button
           type="button"
           onClick={onCancel}
@@ -430,7 +482,7 @@ export function CreatePostForm({
       </div>
 
       {/* ── Scrollable body ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 touch-manipulation overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch]">
 
         {error && (
           <div className="mx-4 mt-3 px-3 py-2 bg-red-50 text-red-600 text-sm rounded-xl">
@@ -457,7 +509,7 @@ export function CreatePostForm({
             }}
             placeholder="What did you find?"
             maxLength={100}
-            autoFocus={!editPost}
+            autoFocus={Boolean(!editPost && finePointerAutofocusTitle)}
             className="w-full text-[19px] font-semibold text-[#1a1a1a] placeholder-[#c8cdd8] outline-none bg-transparent leading-snug"
           />
           <textarea

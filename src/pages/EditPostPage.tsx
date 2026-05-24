@@ -62,7 +62,7 @@ export function EditPostPage() {
   }
 
   return (
-    <div className="flex w-full flex-col bg-white">
+    <div className="flex min-h-dvh w-full flex-1 flex-col bg-white">
       <CreatePostForm
         editPost={post}
         onCancel={goBack}
