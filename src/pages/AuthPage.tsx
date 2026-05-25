@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import nommiLogoTagline from '../assets/nommi/nommi_logo_tagline.png';
@@ -12,6 +12,8 @@ interface AuthPageProps {
 export function AuthPage({ mode }: AuthPageProps) {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const appliedAuthCallbackError = useRef(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -21,7 +23,24 @@ export function AuthPage({ mode }: AuthPageProps) {
 
   useEffect(() => {
     setPendingVerifyEmail(null);
+    setError(null);
   }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'login') appliedAuthCallbackError.current = false;
+  }, [mode]);
+
+  useEffect(() => {
+    if (appliedAuthCallbackError.current || mode !== 'login') return;
+    const state = location.state as { authCallbackError?: string } | null | undefined;
+    const msg = state?.authCallbackError?.trim();
+    if (!msg) return;
+
+    appliedAuthCallbackError.current = true;
+    console.warn('[login] Showing auth callback failure notice:', msg);
+    setError(msg);
+    navigate('.', { replace: true, state: null });
+  }, [mode, location.state, navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,11 +113,12 @@ export function AuthPage({ mode }: AuthPageProps) {
               We sent a verification link to{' '}
               <span className="font-semibold text-[#0f766e] break-all">{pendingVerifyEmail}</span>.
               Check your inbox and your spam / junk folder if you don&apos;t see it yet. Open that
-              email and tap the link. After it succeeds,{' '}
+              email and tap the link — Nommi finishes sign-in automatically, then sends you to the
+              feed. If that doesn&apos;t happen,{' '}
               <Link to="/login" className="font-bold text-[#2f5fc4] underline underline-offset-2">
                 sign in here
               </Link>{' '}
-              with the password you just chose.
+              with the password you chose.
             </p>
             <button
               type="button"

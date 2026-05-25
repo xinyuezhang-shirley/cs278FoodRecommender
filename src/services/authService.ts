@@ -1,7 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import type { UserProfile, AuthUser, SignUpData, SignInData } from '../types';
 import { supabase, getPersistedGoTrueStorageKey } from '../lib/supabase';
-import { getAuthEmailRedirectUrl } from '../lib/siteUrl';
+import { resolveAuthEmailCallbackUrl } from '../lib/siteUrl';
 import { validateEmail, validatePassword, validateUsername } from '../utils/sanitize';
 
 export interface AuthResult {
@@ -153,13 +153,20 @@ export async function signUp(data: SignUpData): Promise<SignUpOutcome> {
   const unErr = validateUsername(username);
   if (unErr) throw new Error(unErr);
 
-  const emailRedirectTo = getAuthEmailRedirectUrl();
+  const emailRedirectTo = resolveAuthEmailCallbackUrl();
+  if (!emailRedirectTo) {
+    throw new Error(
+      'Cannot build email verification redirect. Open Nommi in a normal browser tab, '
+      + 'or set VITE_SITE_URL to your deployed site so links use /auth/callback.',
+    );
+  }
+
   const { data: authData, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: { username },
-      ...(emailRedirectTo ? { emailRedirectTo } : {}),
+      emailRedirectTo,
     },
   });
 
@@ -492,7 +499,19 @@ export async function resendVerificationEmail(): Promise<void> {
   if (error) throw new Error(prettifySupabaseEmailAuthError(error.message));
   const email = data.user?.email;
   if (!email) throw new Error('No email available');
-  const result = await supabase.auth.resend({ type: 'signup', email });
+
+  const emailRedirectTo = resolveAuthEmailCallbackUrl();
+  if (!emailRedirectTo) {
+    throw new Error(
+      'Cannot build verification redirect. Set VITE_SITE_URL if you cannot use this in a browser.',
+    );
+  }
+
+  const result = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo },
+  });
   if (result.error) {
     throw new Error(prettifySupabaseEmailAuthError(result.error.message));
   }

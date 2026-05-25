@@ -55,23 +55,23 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-For **hosted deployments** so signup confirmation emails don’t embed `localhost`, also set:
+For **hosted deployments** — same Supabase **project** in every environment (`VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` must match what you configured in Supabase), and predictable email confirmation redirects:
 
 ```bash
-# Production origin only (recommended on Vercel production). Omit locally to keep using http://localhost:5173 during dev.
-VITE_SITE_URL=https://cs278-food-recommender.vercel.app
-# Optional: where the user lands after tapping the email link (default /login).
-# Use /signup only if you really want them back on the signup screen.
-# VITE_AUTH_EMAIL_REDIRECT_PATH=/login
+# Stable origin for signup / verification emails ({origin}/auth/callback). Omit locally to use the current tab’s origin during dev (e.g. http://localhost:5173/auth/callback).
+VITE_SITE_URL=https://your-app.vercel.app
 ```
 
-In the **Supabase Dashboard** → **Authentication** → **URL Configuration**:
+Signup and “resend confirmation” emails embed:
 
-- Set **Site URL** to your production URL (e.g. `https://cs278-food-recommender.vercel.app`) if anything still resolves to localhost.
-- Under **Redirect URLs**, allow your app origins, for example  
-  `https://cs278-food-recommender.vercel.app/**` and `http://localhost:5173/**`.
+`https://<origin>/auth/callback`
 
-The client passes `emailRedirectTo` on signup so the confirmation link prefers your deployed origin; it must appear in Supabase’s allow list ([Auth URL config](https://supabase.com/docs/guides/auth/url-configuration)).
+Exchange of `?code=` happens only on that route so your session is persisted before SPA redirects strip query params.
+
+In the **Supabase Dashboard** → **Authentication** → **URL Configuration** ([docs](https://supabase.com/docs/guides/auth/url-configuration)):
+
+- **Site URL** — your canonical production URL.
+- **Redirect URLs** — must include **`https://your-app.vercel.app/auth/callback`** and **`http://localhost:5173/auth/callback`** (and **`…/**`** wildcards if you prefer).
 
 Optional maps/geocoding variables are supported by the location services.
 

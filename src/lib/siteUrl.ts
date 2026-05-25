@@ -1,7 +1,7 @@
 /**
- * Public site origin for auth email links (signup confirm, magic link).
- * Prefer VITE_SITE_URL on Vercel when you want a stable production URL (avoids mismatched previews).
- * Otherwise falls back to the current browser origin (works for signup from the deployed app).
+ * Public site origin for auth email links.
+ * Prefer VITE_SITE_URL on Vercel for a stable production URL.
+ * Falls back to window.location.origin when signup runs in the browser.
  */
 export function getSiteOrigin(): string {
   const trimmed = (import.meta.env.VITE_SITE_URL ?? '').trim().replace(/\/$/, '');
@@ -15,15 +15,25 @@ export function getSiteOrigin(): string {
 }
 
 /**
- * Absolute redirect URL embedded in Supabase confirmation emails (must appear under
- * Dashboard → Authentication → Redirect URLs).
+ * PKCE confirmation link target: `{origin}/auth/callback`.
+ * In the browser, uses `window.location.origin`; otherwise `import.meta.env.VITE_SITE_URL`.
  */
-export function getAuthEmailRedirectUrl(): string | undefined {
-  const origin = getSiteOrigin();
-  if (!origin) return undefined;
+export function resolveAuthEmailCallbackUrl(): string | undefined {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin.replace(/\/$/, '')}/auth/callback`;
+  }
 
-  const pathRaw = (import.meta.env.VITE_AUTH_EMAIL_REDIRECT_PATH ?? '/login').trim() || '/login';
-  const path = pathRaw.startsWith('/') ? pathRaw : `/${pathRaw}`;
+  const origin = (import.meta.env.VITE_SITE_URL ?? '').trim().replace(/\/$/, '');
+  if (origin) {
+    return `${origin}/auth/callback`;
+  }
 
-  return `${origin}${path}`;
+  return undefined;
+}
+
+/**
+ * @deprecated use resolveAuthEmailCallbackUrl — kept for clarity in exports if imported elsewhere.
+ */
+export function getAuthEmailConfirmationRedirectUrl(): string | undefined {
+  return resolveAuthEmailCallbackUrl();
 }

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { AuthPage } from './pages/AuthPage';
+import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { FeedPage } from './pages/FeedPage';
 import { MapPage } from './pages/MapPage';
 import { CommunityPage } from './pages/CommunityPage';
@@ -39,6 +40,7 @@ export default function App() {
           {/* Auth routes */}
           <Route path="/login" element={<AuthPage mode="login" />} />
           <Route path="/signup" element={<AuthPage mode="signup" />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
           {/* Protected app routes */}
           <Route path="/app" element={<AppLayout />}>

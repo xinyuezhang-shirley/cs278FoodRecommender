@@ -29,7 +29,9 @@ export const supabase = createClient(
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      /** Handled explicitly on `/auth/callback` via `exchangeCodeForSession`; avoids races with SPA redirects. */
+      detectSessionInUrl: false,
+      flowType: 'pkce',
     },
   },
 );
