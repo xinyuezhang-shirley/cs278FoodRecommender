@@ -180,7 +180,8 @@ export async function signUp(data: SignUpData): Promise<SignUpOutcome> {
   const hasJwt = !!(session?.access_token && session.user?.id);
 
   if (!hasJwt) {
-    await supabase.auth.signOut();
+    // Do NOT call signOut() here: `_signOut` removes `{storageKey}-code-verifier`, which PKCE email
+    // confirmation needs on this same browser when the user clicks the link (`exchangeCodeForSession`).
     return { status: 'pending_email_verification', email: resolvedEmail };
   }
 

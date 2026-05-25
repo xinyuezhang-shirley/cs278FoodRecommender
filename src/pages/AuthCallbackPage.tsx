@@ -1,7 +1,19 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isAuthPKCECodeVerifierMissingError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { PageLoader } from '../components/ui/LoadingSpinner';
+
+const PKCE_VERIFIER_MISSING_MESSAGE =
+  'Open the confirmation link in the same browser and profile where you signed up—another device clears the security step. Request a fresh email if needed and complete it without clearing site storage.';
+
+/** Map Supabase / PKCE failures to actionable copy before redirecting to login. */
+function messageAfterCodeExchangeFailure(err: unknown, serverMessage?: string | null): string {
+  if (isAuthPKCECodeVerifierMissingError(err)) return PKCE_VERIFIER_MISSING_MESSAGE;
+  const raw = typeof serverMessage === 'string' ? serverMessage.trim() : '';
+  if (raw.length > 0) return raw;
+  return 'Could not complete email verification. Try signing in with your password or request a new confirmation email.';
+}
 
 /** PKCE / email confirmation: exchange `?code=` for a persisted session before any catch-all redirects strip query params. */
 export function AuthCallbackPage() {
@@ -66,7 +78,10 @@ export function AuthCallbackPage() {
           replace: true,
           state: {
             authCallbackError:
-              err instanceof Error ? err.message : 'Verification failed unexpectedly.',
+              messageAfterCodeExchangeFailure(
+                err,
+                err instanceof Error ? err.message : undefined,
+              ),
           },
         });
       }
