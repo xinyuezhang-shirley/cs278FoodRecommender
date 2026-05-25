@@ -55,6 +55,24 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
+For **hosted deployments** so signup confirmation emails don’t embed `localhost`, also set:
+
+```bash
+# Production origin only (recommended on Vercel production). Omit locally to keep using http://localhost:5173 during dev.
+VITE_SITE_URL=https://cs278-food-recommender.vercel.app
+# Optional: where the user lands after tapping the email link (default /login).
+# Use /signup only if you really want them back on the signup screen.
+# VITE_AUTH_EMAIL_REDIRECT_PATH=/login
+```
+
+In the **Supabase Dashboard** → **Authentication** → **URL Configuration**:
+
+- Set **Site URL** to your production URL (e.g. `https://cs278-food-recommender.vercel.app`) if anything still resolves to localhost.
+- Under **Redirect URLs**, allow your app origins, for example  
+  `https://cs278-food-recommender.vercel.app/**` and `http://localhost:5173/**`.
+
+The client passes `emailRedirectTo` on signup so the confirmation link prefers your deployed origin; it must appear in Supabase’s allow list ([Auth URL config](https://supabase.com/docs/guides/auth/url-configuration)).
+
 Optional maps/geocoding variables are supported by the location services.
 
 ---

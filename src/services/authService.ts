@@ -1,6 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import type { UserProfile, AuthUser, SignUpData, SignInData } from '../types';
 import { supabase, getPersistedGoTrueStorageKey } from '../lib/supabase';
+import { getAuthEmailRedirectUrl } from '../lib/siteUrl';
 import { validateEmail, validatePassword, validateUsername } from '../utils/sanitize';
 
 export interface AuthResult {
@@ -152,11 +153,13 @@ export async function signUp(data: SignUpData): Promise<SignUpOutcome> {
   const unErr = validateUsername(username);
   if (unErr) throw new Error(unErr);
 
+  const emailRedirectTo = getAuthEmailRedirectUrl();
   const { data: authData, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: { username },
+      ...(emailRedirectTo ? { emailRedirectTo } : {}),
     },
   });
 
