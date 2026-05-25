@@ -9,8 +9,10 @@ interface AuthPageProps {
   mode: 'login' | 'signup';
 }
 
+const OAUTH_ERROR_QUERY_KEYS = ['error', 'error_description', 'error_code'] as const;
+
 export function AuthPage({ mode }: AuthPageProps) {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user, loading: authBootstrapping } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const appliedAuthCallbackError = useRef(false);
@@ -30,7 +32,36 @@ export function AuthPage({ mode }: AuthPageProps) {
     if (mode !== 'login') appliedAuthCallbackError.current = false;
   }, [mode]);
 
+  /** Established session elsewhere (this tab or storage): skip stale errors & leave auth screens. */
   useEffect(() => {
+    if (authBootstrapping || !user) return;
+    setError(null);
+    setPendingVerifyEmail(null);
+    navigate('/app/feed', { replace: true });
+  }, [authBootstrapping, user, navigate]);
+
+  /** Consume OAuth/query error_* params (keeps RR and address bar aligned). */
+  useEffect(() => {
+    if (authBootstrapping || user) return;
+
+    const qp = new URLSearchParams(location.search);
+    const oauthMsg =
+      qp.get('error_description')?.trim()
+      ?? qp.get('error')?.trim()
+      ?? null;
+    const hadOAuth = OAUTH_ERROR_QUERY_KEYS.some(k => qp.has(k));
+    if (hadOAuth) {
+      const rest = new URLSearchParams(location.search);
+      OAUTH_ERROR_QUERY_KEYS.forEach(k => rest.delete(k));
+      const qs = rest.toString();
+      navigate(`${location.pathname}${qs ? `?${qs}` : ''}${location.hash}`, { replace: true });
+    }
+
+    if (oauthMsg) setError(oauthMsg);
+  }, [authBootstrapping, user, location.search, location.pathname, location.hash, navigate]);
+
+  useEffect(() => {
+    if (authBootstrapping || user) return;
     if (appliedAuthCallbackError.current || mode !== 'login') return;
     const state = location.state as { authCallbackError?: string } | null | undefined;
     const msg = state?.authCallbackError?.trim();
@@ -40,11 +71,11 @@ export function AuthPage({ mode }: AuthPageProps) {
     console.warn('[login] Showing auth callback failure notice:', msg);
     setError(msg);
     navigate('.', { replace: true, state: null });
-  }, [mode, location.state, navigate]);
+  }, [authBootstrapping, user, mode, location.state, navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (loading) return;
+    if (loading || authBootstrapping) return;
     setError(null);
     setPendingVerifyEmail(null);
     setLoading(true);
@@ -60,6 +91,8 @@ export function AuthPage({ mode }: AuthPageProps) {
           return;
         }
       }
+      setError(null);
+      setPendingVerifyEmail(null);
       navigate('/app/feed', { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -133,7 +166,7 @@ export function AuthPage({ mode }: AuthPageProps) {
           </div>
         )}
 
-        {error && (
+        {error && !user && (
           <div
             className="mb-4 px-3 py-2.5 bg-red-50 text-red-600 text-sm rounded-2xl whitespace-pre-line leading-snug"
             role="alert"

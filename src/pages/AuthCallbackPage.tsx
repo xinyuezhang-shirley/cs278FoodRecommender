@@ -15,6 +15,10 @@ function messageAfterCodeExchangeFailure(err: unknown, serverMessage?: string | 
   return 'Could not complete email verification. Try signing in with your password or request a new confirmation email.';
 }
 
+function stripAuthorizationSearchParamsFromUrl(): void {
+  window.history.replaceState({}, document.title, window.location.pathname);
+}
+
 /** PKCE / email confirmation: exchange `?code=` for a persisted session before any catch-all redirects strip query params. */
 export function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -31,28 +35,38 @@ export function AuthCallbackPage() {
       ?? params.get('error')?.trim()
       ?? null;
 
-    if (oauthErr) {
-      console.error('[auth/callback] Supabase error in redirect query:', oauthErr);
-      navigate('/login', {
-        replace: true,
-        state: { authCallbackError: oauthErr },
-      });
-      return;
-    }
-
-    if (!code) {
-      console.warn('[auth/callback] Missing ?code= (PKCE / email verification callback).');
-      navigate('/login', {
-        replace: true,
-        state: {
-          authCallbackError:
-            'Missing verification code. Try the link in your email again, or sign in with your password.',
-        },
-      });
-      return;
-    }
+    stripAuthorizationSearchParamsFromUrl();
 
     void (async () => {
+      const {
+        data: { session: existingSession },
+      } = await supabase.auth.getSession();
+      if (existingSession) {
+        navigate('/app/feed', { replace: true });
+        return;
+      }
+
+      if (oauthErr) {
+        console.error('[auth/callback] Supabase error in redirect query:', oauthErr);
+        navigate('/login', {
+          replace: true,
+          state: { authCallbackError: oauthErr },
+        });
+        return;
+      }
+
+      if (!code) {
+        console.warn('[auth/callback] Missing ?code= (PKCE / email verification callback).');
+        navigate('/login', {
+          replace: true,
+          state: {
+            authCallbackError:
+              'Missing verification code. Try the link in your email again, or sign in with your password.',
+          },
+        });
+        return;
+      }
+
       try {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
@@ -61,9 +75,7 @@ export function AuthCallbackPage() {
           navigate('/login', {
             replace: true,
             state: {
-              authCallbackError:
-                error.message?.trim()
-                ?? 'Could not complete email verification. Try signing in with your password.',
+              authCallbackError: messageAfterCodeExchangeFailure(error, error.message),
             },
           });
           return;
