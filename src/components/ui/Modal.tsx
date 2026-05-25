@@ -14,12 +14,18 @@ interface ModalProps {
 
 export function Modal({ open, onClose, children, title, fullScreen = false, elevated = false }: ModalProps) {
   useEffect(() => {
+    const html = document.documentElement;
     if (open) {
+      html.style.overflow = 'hidden';
       document.body.style.overflow = 'hidden';
     } else {
+      html.style.overflow = '';
       document.body.style.overflow = '';
     }
-    return () => { document.body.style.overflow = ''; };
+    return () => {
+      html.style.overflow = '';
+      document.body.style.overflow = '';
+    };
   }, [open]);
 
   useEffect(() => {
@@ -30,11 +36,48 @@ export function Modal({ open, onClose, children, title, fullScreen = false, elev
 
   if (!open) return null;
 
+  const shellZ = elevated ? 'z-[10050]' : 'z-[9999]';
+
+  /** Full-screen: anchor with `fixed inset-0` + stretched flex child — avoids `100dvh` + `items-end` glitches on iOS (toolbar / keyboard resize). */
+  if (fullScreen) {
+    const fullScreenMarkup = (
+      <div className={`fixed inset-0 ${shellZ} flex justify-center overscroll-none`}>
+        <div
+          className="absolute inset-0 bg-[#2f5fc4]/15 backdrop-blur-[2px]"
+          onClick={onClose}
+          aria-hidden
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="relative mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden overscroll-y-contain border-x border-[#e5e7eb]/90 bg-[#faf9f5] shadow-[0_24px_64px_rgba(47,95,196,0.18)]"
+        >
+          {title ? (
+            <div className="flex shrink-0 items-center justify-between border-b border-[#e5e7eb] bg-[#faf9f5] px-4 py-3">
+              <h2 className="text-base font-black text-[#2f5fc4]">{title}</h2>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-transparent p-2 text-[#6b7280] transition-colors hover:border-[#e5e7eb] hover:bg-white"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : null}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+        </div>
+      </div>
+    );
+
+    return typeof document !== 'undefined' ? createPortal(fullScreenMarkup, document.body) : null;
+  }
+
   const overlay = (
     <div
       className={[
         'fixed inset-0 flex items-end justify-center sm:items-center',
-        elevated ? 'z-[10050]' : 'z-[9999]',
+        shellZ,
       ].join(' ')}
     >
       <div
@@ -44,32 +87,24 @@ export function Modal({ open, onClose, children, title, fullScreen = false, elev
       />
       <div
         className={[
-          'relative bg-[#faf9f5] w-full max-w-lg shadow-[0_24px_64px_rgba(47,95,196,0.18)] border border-[#e5e7eb]/80',
-          fullScreen
-            ? 'h-[100dvh] max-h-[100dvh] rounded-none overflow-hidden flex flex-col min-h-0 overscroll-y-contain'
-            : 'max-h-[90dvh] overflow-y-auto overflow-x-hidden rounded-[28px] sm:rounded-[28px] mt-auto sm:mt-0',
+          'relative flex w-full max-w-lg flex-col border border-[#e5e7eb]/80 bg-[#faf9f5] shadow-[0_24px_64px_rgba(47,95,196,0.18)]',
+          'max-h-[90dvh] min-h-0 overflow-y-auto overflow-x-hidden rounded-[28px] sm:rounded-[28px] mt-auto sm:mt-0',
         ].join(' ')}
         role="dialog"
         aria-modal="true"
       >
-        {(title || !fullScreen) && (
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#e5e7eb] sticky top-0 bg-[#faf9f5]/96 backdrop-blur-sm z-10">
-            {title && <h2 className="text-base font-black text-[#2f5fc4]">{title}</h2>}
-            <button
-              type="button"
-              onClick={onClose}
-              className="ml-auto p-2 rounded-full hover:bg-white text-[#6b7280] border border-transparent hover:border-[#e5e7eb] transition-colors"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-        {fullScreen ? (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
-        ) : (
-          children
-        )}
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#e5e7eb] bg-[#faf9f5]/96 px-4 py-3 backdrop-blur-sm">
+          {title ? <h2 className="text-base font-black text-[#2f5fc4]">{title}</h2> : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto rounded-full border border-transparent p-2 text-[#6b7280] transition-colors hover:border-[#e5e7eb] hover:bg-white"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {children}
       </div>
     </div>
   );

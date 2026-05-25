@@ -12,6 +12,7 @@ import { ChatPage } from './pages/ChatPage';
 import { CollectionsPage } from './pages/CollectionsPage';
 import { PostPage } from './pages/PostPage';
 import { EditPostPage } from './pages/EditPostPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 
 export default function App() {
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function App() {
             <Route index element={<Navigate to="feed" replace />} />
             <Route path="feed" element={<FeedPage />} />
             <Route path="map" element={<MapPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
             <Route path="community" element={<CommunityPage />} />
             <Route path="chat" element={<ChatPage />} />
             <Route path="collections" element={<Navigate to="/app/collections/saved" replace />} />

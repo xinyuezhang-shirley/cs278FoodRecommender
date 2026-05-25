@@ -8,9 +8,11 @@ import {
   Users,
   MessagesSquare,
   UsersRound,
+  Bell,
   type LucideIcon,
 } from 'lucide-react';
 import { useChatUnreadOptional } from '../../context/ChatUnreadContext';
+import { usePostNotificationsOptional } from '../../context/PostNotificationsContext';
 
 interface BottomNavProps {
   onCreatePost: () => void;
@@ -25,7 +27,11 @@ const PINK_ACTIVE = '#ff4f73';
 const MUTED = '#9ca3af';
 
 function socialSectionActive(pathname: string) {
-  return pathname.startsWith('/app/community') || pathname.startsWith('/app/chat');
+  return (
+    pathname.startsWith('/app/community')
+    || pathname.startsWith('/app/chat')
+    || pathname.startsWith('/app/notifications')
+  );
 }
 
 function TabLink(props: {
@@ -65,12 +71,25 @@ function TabLink(props: {
 export function BottomNav({ onCreatePost }: BottomNavProps) {
   const { pathname } = useLocation();
   const chatUnread = useChatUnreadOptional();
+  const postNotifications = usePostNotificationsOptional();
+  const notifUnread = postNotifications?.unreadPostNotificationsCount ?? 0;
   const dmBadge =
     chatUnread && chatUnread.chatUnreadTotal > 0
       ? chatUnread.chatUnreadTotal > 99
         ? '99+'
         : String(chatUnread.chatUnreadTotal)
       : undefined;
+
+  const socialComboUnread = (chatUnread?.chatUnreadTotal ?? 0) + notifUnread;
+  const socialMenuBadge =
+    socialComboUnread > 0
+      ? socialComboUnread > 99
+        ? '99+'
+        : String(socialComboUnread)
+      : undefined;
+
+  const notifMenuBadge =
+    notifUnread > 0 ? (notifUnread > 99 ? '99+' : String(notifUnread)) : undefined;
 
   const [socialOpen, setSocialOpen] = useState(false);
   const socialRootRef = useRef<HTMLDivElement>(null);
@@ -126,7 +145,7 @@ export function BottomNav({ onCreatePost }: BottomNavProps) {
           <div ref={socialRootRef} className="relative min-w-0">
             <button
               type="button"
-              aria-label="Social menu"
+              aria-label={socialMenuBadge ? `Social menu, ${socialMenuBadge} unread` : 'Social menu'}
               aria-expanded={socialOpen}
               aria-haspopup="menu"
               onClick={() => setSocialOpen((o) => !o)}
@@ -137,11 +156,16 @@ export function BottomNav({ onCreatePost }: BottomNavProps) {
               ].join(' ')}
               style={{ color: socialActive ? PINK_ACTIVE : MUTED }}
             >
-              <span className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center">
+              <span className="relative inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center">
                 <UsersRound
                   className="h-[21px] w-[21px] shrink-0"
                   strokeWidth={socialActive ? 2.5 : 1.8}
                 />
+                {socialMenuBadge ? (
+                  <span className="pointer-events-none absolute -right-2 -top-0.5 flex min-h-[14px] min-w-[14px] items-center justify-center rounded-full border border-white bg-[#ff4f73] px-0.5 text-[8px] font-black tabular-nums leading-none text-white shadow-sm">
+                    {socialMenuBadge}
+                  </span>
+                ) : null}
               </span>
               <span className="w-full truncate px-0.5 text-center text-[9px] font-bold">Social</span>
             </button>
@@ -157,6 +181,30 @@ export function BottomNav({ onCreatePost }: BottomNavProps) {
                   'px-1 py-1 shadow-[0_12px_40px_rgba(47,95,196,0.16),0_2px_8px_rgba(31,41,55,0.06)]',
                 ].join(' ')}
               >
+                <NavLink
+                  to="/app/notifications"
+                  role="menuitem"
+                  onClick={() => setSocialOpen(false)}
+                  aria-label={notifMenuBadge ? `Notifications, ${notifMenuBadge} unread` : 'Notifications'}
+                  className={({ isActive }) =>
+                    [
+                      'flex items-center justify-between gap-2 rounded-[14px] px-3 py-2 text-[13px] font-semibold motion-safe:active:scale-[0.98]',
+                      isActive
+                        ? 'bg-[#fff1f5] text-[#ff4f73]'
+                        : 'text-[#374151] transition-colors hover:bg-[#f9fafb]',
+                    ].join(' ')
+                  }
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <Bell className="h-[18px] w-[18px] shrink-0" strokeWidth={2} />
+                    <span>Notifications</span>
+                  </span>
+                  {notifMenuBadge ? (
+                    <span className="shrink-0 rounded-full border border-white/80 bg-[#ff4f73] px-1.5 py-0.5 text-[10px] font-black tabular-nums leading-none text-white shadow-sm">
+                      {notifMenuBadge}
+                    </span>
+                  ) : null}
+                </NavLink>
                 <NavLink
                   to="/app/community"
                   role="menuitem"

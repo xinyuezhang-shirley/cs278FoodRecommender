@@ -8,6 +8,7 @@ import { CreatePostForm } from '../posts/CreatePostForm';
 import { LogoPatternBackground } from '../ui/LogoPatternBackground';
 import { NommiFilterProvider } from '../../context/NommiFilterProvider';
 import { ChatUnreadProvider } from '../../context/ChatUnreadContext';
+import { PostNotificationsProvider } from '../../context/PostNotificationsContext';
 
 export function AppLayout() {
   const { user, loading } = useAuth();
@@ -84,36 +85,38 @@ export function AppLayout() {
 
   return (
     <ChatUnreadProvider userId={user.id}>
-      <div
-        className="nommi-app-shell relative isolate mx-auto flex w-full max-w-lg min-h-dvh flex-col overflow-x-hidden bg-[#faf9f5]"
-      >
-        <LogoPatternBackground />
-        <main
-          className="relative z-[1] flex w-full min-w-0 grow flex-col"
-          onTouchStart={onTouchStart}
-          onTouchEnd={onTouchEnd}
+      <PostNotificationsProvider userId={user.id}>
+        <div
+          className="nommi-app-shell relative isolate mx-auto flex w-full max-w-lg min-h-dvh flex-col overflow-x-hidden bg-[#faf9f5]"
         >
-          <NommiFilterProvider>
-            <div
-              key={pathname}
-              className="nommi-route-enter flex w-full flex-col"
-            >
-              <Outlet />
-            </div>
-          </NommiFilterProvider>
-        </main>
+          <LogoPatternBackground />
+          <main
+            className="relative z-[1] flex w-full min-w-0 grow flex-col"
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+          >
+            <NommiFilterProvider>
+              <div
+                key={pathname}
+                className="nommi-route-enter flex w-full flex-col"
+              >
+                <Outlet />
+              </div>
+            </NommiFilterProvider>
+          </main>
 
-        <div className="fixed bottom-0 left-1/2 z-[50] w-full max-w-lg -translate-x-1/2">
-          <BottomNav onCreatePost={() => setShowCreate(true)} />
+          <div className="fixed bottom-0 left-1/2 z-[50] w-full max-w-lg -translate-x-1/2">
+            <BottomNav onCreatePost={() => setShowCreate(true)} />
+          </div>
+
+          <Modal open={showCreate} onClose={() => setShowCreate(false)} fullScreen>
+            <CreatePostForm
+              onSuccess={() => setShowCreate(false)}
+              onCancel={() => setShowCreate(false)}
+            />
+          </Modal>
         </div>
-
-        <Modal open={showCreate} onClose={() => setShowCreate(false)} fullScreen>
-          <CreatePostForm
-            onSuccess={() => setShowCreate(false)}
-            onCancel={() => setShowCreate(false)}
-          />
-        </Modal>
-      </div>
+      </PostNotificationsProvider>
     </ChatUnreadProvider>
   );
 }

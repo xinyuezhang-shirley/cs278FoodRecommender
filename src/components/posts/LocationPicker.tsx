@@ -336,7 +336,7 @@ export function LocationPicker({ locationName, latitude, longitude, onSelect }: 
     : 'Drag the pin to adjust — or tap the map to move it';
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative z-0">
       {locationName ? (
         <div className="flex items-center gap-2.5 px-4 py-3.5">
           <MapPin className="w-4 h-4 shrink-0 text-[#f43f5e]" aria-hidden />
@@ -365,7 +365,7 @@ export function LocationPicker({ locationName, latitude, longitude, onSelect }: 
 
       {open && (
         <div
-          className="absolute left-4 right-4 top-full z-[600] rounded-2xl overflow-hidden border border-[#e8ecf4]"
+          className="absolute left-4 right-4 top-full z-30 rounded-2xl overflow-hidden border border-[#e8ecf4]"
           style={{ background: 'white', boxShadow: '0 12px 48px rgba(47,95,196,0.15), 0 2px 8px rgba(0,0,0,0.06)' }}
         >
           <div className="px-3 py-2 bg-[#fafbff] border-b border-[#f0f4ff] flex items-center gap-2">

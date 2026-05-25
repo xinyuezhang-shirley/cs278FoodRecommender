@@ -449,11 +449,11 @@ export function CreatePostForm({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
+    <div className="isolate flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white">
 
-      {/* ── Top bar (safe-area + sticky; fills modal flex chain on mobile) ── */}
+      {/* ── Top bar — not inside the scroll region so it never “scrolls under” siblings; high z-index beats in-flow pickers/maps. ── */}
       <div
-        className="flex shrink-0 items-center border-b border-[#f3f4f6] bg-white px-4 pb-3 sticky top-0 z-30 pt-[max(12px,env(safe-area-inset-top,0px))]"
+        className="relative z-[80] flex shrink-0 items-center border-b border-[#f3f4f6] bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top,0px))]"
       >
         <button
           type="button"
@@ -481,7 +481,7 @@ export function CreatePostForm({
       </div>
 
       {/* ── Scrollable body ── */}
-      <div className="min-h-0 flex-1 touch-manipulation overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch]">
+      <div className="relative z-0 min-h-0 flex-1 touch-manipulation overflow-y-auto overflow-x-hidden overscroll-y-contain [-webkit-overflow-scrolling:touch]">
 
         {error && (
           <div className="mx-4 mt-3 px-3 py-2 bg-red-50 text-red-600 text-sm rounded-xl">
