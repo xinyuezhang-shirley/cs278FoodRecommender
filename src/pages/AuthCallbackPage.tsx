@@ -6,14 +6,17 @@ import {
   clearEmailCallbackCodeBackup,
   exchangeEmailCallbackCodeOnce,
   readEmailCallbackCodeFromLocation,
+  readEmailTokenHashFromLocation,
   stripAuthCallbackHashFromUrl,
   stripAuthCallbackSearchFromUrl,
   trySetSessionFromUrlHash,
+  verifyEmailTokenHashOnce,
 } from '../lib/authCallbackExchange';
 import { PageLoader } from '../components/ui/LoadingSpinner';
 
 const PKCE_VERIFIER_MISSING_MESSAGE =
-  'Open the confirmation link in the same browser and profile where you signed up—another device clears the security step. Request a fresh email if needed and complete it without clearing site storage.';
+  'This link uses PKCE and only works in the same browser where you signed up. Ask your project owner to update the Supabase '
+  + '“Confirm signup” email template (see README), then resend confirmation and open the new link on any device.';
 
 /** Map Supabase / PKCE failures to actionable copy before redirecting to login. */
 function messageAfterCodeExchangeFailure(err: unknown, serverMessage?: string | null): string {
@@ -55,6 +58,7 @@ export function AuthCallbackPage() {
 
   useEffect(() => {
     const oauthErr = readOAuthErrorFromLocation();
+    const tokenPayload = readEmailTokenHashFromLocation();
     const code = readEmailCallbackCodeFromLocation();
 
     const goLogin = (authCallbackError: string) => {
@@ -66,6 +70,26 @@ export function AuthCallbackPage() {
       if (oauthErr) {
         console.error('[auth/callback] Supabase error in redirect query:', oauthErr);
         goLogin(oauthErr);
+        return;
+      }
+
+      if (tokenPayload) {
+        const otpResult = await verifyEmailTokenHashOnce(
+          tokenPayload.token_hash,
+          tokenPayload.type,
+        );
+        if (otpResult.ok) {
+          console.log('[auth/callback] verifyOtp ok, session:', Boolean(otpResult.session));
+          finishCallbackUi();
+          navigate('/app/feed', { replace: true });
+          return;
+        }
+        const otpMsg =
+          otpResult.error && typeof otpResult.error === 'object' && 'message' in otpResult.error
+            ? String((otpResult.error as { message: unknown }).message)
+            : undefined;
+        console.error('[auth/callback] verifyOtp failed:', otpMsg, otpResult.error);
+        goLogin(otpMsg ?? 'Email confirmation failed. Request a new confirmation email from login.');
         return;
       }
 

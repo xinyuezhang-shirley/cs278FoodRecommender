@@ -66,12 +66,28 @@ Signup and “resend confirmation” emails embed:
 
 `https://<origin>/auth/callback`
 
-Exchange of `?code=` happens only on that route so your session is persisted before SPA redirects strip query params.
+Nommi finishes sign-in on `/auth/callback` using either:
+
+- **`?token_hash=…&type=signup`** — works in **any browser / phone** (recommended; see email template below).
+- **`?code=…`** — PKCE only; must open the link in the **same browser** where you signed up.
 
 In the **Supabase Dashboard** → **Authentication** → **URL Configuration** ([docs](https://supabase.com/docs/guides/auth/url-configuration)):
 
-- **Site URL** — your canonical production URL.
+- **Site URL** — your canonical production URL (e.g. `https://your-app.vercel.app`).
 - **Redirect URLs** — must include **`https://your-app.vercel.app/auth/callback`** and **`http://localhost:5173/auth/callback`** (and **`…/**`** wildcards if you prefer).
+
+### Email template (confirm on any device)
+
+**Authentication** → **Email Templates** → **Confirm signup**. Replace the default `{{ .ConfirmationURL }}` link with a direct link to Nommi that includes the token hash:
+
+```html
+<h2>Confirm your Nommi account</h2>
+<p><a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=signup">Confirm your email</a></p>
+```
+
+Use the same pattern for **Confirm email change** / resend flows if needed (`type=email` or `type=signup` as appropriate). After saving the template, use **Resend confirmation email** on the login page so new messages use the updated link.
+
+`{{ .SiteURL }}` must match **Site URL** above (production origin, no trailing slash).
 
 Optional maps/geocoding variables are supported by the location services.
 

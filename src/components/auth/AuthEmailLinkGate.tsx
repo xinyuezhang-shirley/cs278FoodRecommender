@@ -4,11 +4,16 @@ import { Navigate, useLocation } from 'react-router-dom';
 /** True when the URL looks like a Supabase auth redirect (PKCE code, OAuth error, or hash tokens). */
 export function locationHasAuthCallbackParams(search: string, hash: string): boolean {
   const q = new URLSearchParams(search);
-  if (q.has('code') || q.has('error') || q.has('error_description')) return true;
+  if (q.has('code') || q.has('token_hash') || q.has('error') || q.has('error_description')) return true;
   const h = hash.startsWith('#') ? hash.slice(1) : hash;
   if (!h) return false;
   const hp = new URLSearchParams(h);
-  return hp.has('access_token') || hp.has('error') || hp.has('error_description');
+  return (
+    hp.has('access_token')
+    || hp.has('token_hash')
+    || hp.has('error')
+    || hp.has('error_description')
+  );
 }
 
 /**
