@@ -19,13 +19,19 @@ export function getSiteOrigin(): string {
  * In the browser, uses `window.location.origin`; otherwise `import.meta.env.VITE_SITE_URL`.
  */
 export function resolveAuthEmailCallbackUrl(): string | undefined {
+  const envOrigin = (import.meta.env.VITE_SITE_URL ?? '').trim().replace(/\/$/, '');
+
+  // Production builds: always use the deployed origin so emails match Supabase allow-list.
+  if (import.meta.env.PROD && envOrigin) {
+    return `${envOrigin}/auth/callback`;
+  }
+
   if (typeof window !== 'undefined' && window.location?.origin) {
     return `${window.location.origin.replace(/\/$/, '')}/auth/callback`;
   }
 
-  const origin = (import.meta.env.VITE_SITE_URL ?? '').trim().replace(/\/$/, '');
-  if (origin) {
-    return `${origin}/auth/callback`;
+  if (envOrigin) {
+    return `${envOrigin}/auth/callback`;
   }
 
   return undefined;

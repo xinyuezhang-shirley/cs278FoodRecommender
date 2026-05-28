@@ -4,7 +4,11 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import nommiLogoTagline from '../assets/nommi/nommi_logo_tagline.png';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { resendSignupConfirmation } from '../services/authService';
+import {
+  readPendingVerifyEmail,
+  rememberPendingVerifyEmail,
+  resendSignupConfirmation,
+} from '../services/authService';
 
 interface AuthPageProps {
   mode: 'login' | 'signup';
@@ -25,17 +29,17 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [resendBusy, setResendBusy] = useState(false);
   const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string | null>(null);
 
-  const showResendConfirmation =
-    mode === 'login'
-    && !user
-    && Boolean(
-      error
-      && /confirm|verif|expired|invalid|same browser|hasn't been verified|confirmation/i.test(error),
-    );
+  const showResendConfirmation = mode === 'login' && !user;
 
   useEffect(() => {
     setPendingVerifyEmail(null);
     setError(null);
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'login') return;
+    const stored = readPendingVerifyEmail();
+    if (stored) setEmail(stored);
   }, [mode]);
 
   useEffect(() => {
@@ -96,6 +100,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       } else {
         const outcome = await signUp({ email, password, username });
         if (outcome.status === 'pending_email_verification') {
+          rememberPendingVerifyEmail(outcome.email);
           setPendingVerifyEmail(outcome.email);
           setPassword('');
           return;
@@ -200,17 +205,6 @@ export function AuthPage({ mode }: AuthPageProps) {
           </div>
         )}
 
-        {showResendConfirmation ? (
-          <button
-            type="button"
-            disabled={resendBusy || !email.trim()}
-            onClick={() => void handleResendConfirmation()}
-            className="mb-4 w-full rounded-2xl border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2.5 text-center text-[13px] font-bold text-[#2f5fc4] transition-colors hover:bg-[#dbeafe] disabled:opacity-50"
-          >
-            {resendBusy ? 'Sending…' : 'Resend confirmation email'}
-          </button>
-        ) : null}
-
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'signup' && (
             <div>
@@ -266,6 +260,28 @@ export function AuthPage({ mode }: AuthPageProps) {
             {mode === 'login' ? 'Sign in' : 'Create account'}
           </Button>
         </form>
+
+        {showResendConfirmation ? (
+          <div className="mt-4 space-y-2">
+            <button
+              type="button"
+              disabled={resendBusy || !email.trim()}
+              onClick={() => void handleResendConfirmation()}
+              className="w-full rounded-2xl border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2.5 text-center text-[13px] font-bold text-[#2f5fc4] transition-colors hover:bg-[#dbeafe] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {resendBusy ? 'Sending…' : 'Resend confirmation email'}
+            </button>
+            {!email.trim() ? (
+              <p className="text-center text-[11px] font-medium text-[#9ca3af]">
+                Enter your email above to resend
+              </p>
+            ) : (
+              <p className="text-center text-[11px] leading-snug text-[#9ca3af]">
+                Open the new link in this same browser (not only your phone mail app).
+              </p>
+            )}
+          </div>
+        ) : null}
 
         {mode === 'login' && (
           <button

@@ -2,6 +2,24 @@ import type { Session, User } from '@supabase/supabase-js';
 import type { UserProfile, AuthUser, SignUpData, SignInData } from '../types';
 import { supabase, getPersistedGoTrueStorageKey } from '../lib/supabase';
 import { resolveAuthEmailCallbackUrl } from '../lib/siteUrl';
+
+export const PENDING_VERIFY_EMAIL_STORAGE_KEY = 'nommi:pending-verify-email';
+
+export function rememberPendingVerifyEmail(email: string): void {
+  try {
+    sessionStorage.setItem(PENDING_VERIFY_EMAIL_STORAGE_KEY, email.trim());
+  } catch {
+    //
+  }
+}
+
+export function readPendingVerifyEmail(): string | null {
+  try {
+    return sessionStorage.getItem(PENDING_VERIFY_EMAIL_STORAGE_KEY)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
 import { validateEmail, validatePassword, validateUsername } from '../utils/sanitize';
 
 export interface AuthResult {
@@ -182,6 +200,7 @@ export async function signUp(data: SignUpData): Promise<SignUpOutcome> {
   if (!hasJwt) {
     // Do NOT call signOut() here: `_signOut` removes `{storageKey}-code-verifier`, which PKCE email
     // confirmation needs on this same browser when the user clicks the link (`exchangeCodeForSession`).
+    rememberPendingVerifyEmail(resolvedEmail);
     return { status: 'pending_email_verification', email: resolvedEmail };
   }
 

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { AuthEmailLinkGate } from './components/auth/AuthEmailLinkGate';
 import { AppLayout } from './components/layout/AppLayout';
 import { AuthPage } from './pages/AuthPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
@@ -37,6 +38,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <AuthEmailLinkGate>
         <Routes>
           {/* Auth routes */}
           <Route path="/login" element={<AuthPage mode="login" />} />
@@ -63,6 +65,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/app/feed" replace />} />
           <Route path="*" element={<Navigate to="/app/feed" replace />} />
         </Routes>
+        </AuthEmailLinkGate>
       </AuthProvider>
     </BrowserRouter>
   );

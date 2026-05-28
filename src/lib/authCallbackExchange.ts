@@ -58,3 +58,26 @@ export function clearEmailCallbackCodeBackup(): void {
 export function stripAuthCallbackSearchFromUrl(): void {
   window.history.replaceState({}, document.title, window.location.pathname);
 }
+
+/** Some Supabase / Site URL configs return tokens in the hash instead of `?code=` (implicit-style redirect). */
+export async function trySetSessionFromUrlHash(): Promise<boolean> {
+  const raw = window.location.hash.replace(/^#/, '').trim();
+  if (!raw) return false;
+
+  const hp = new URLSearchParams(raw);
+  const access_token = hp.get('access_token')?.trim();
+  const refresh_token = hp.get('refresh_token')?.trim();
+  if (!access_token || !refresh_token) return false;
+
+  const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+  if (error) {
+    console.error('[auth/callback] setSession from hash failed:', error.message);
+    return false;
+  }
+  return true;
+}
+
+export function stripAuthCallbackHashFromUrl(): void {
+  if (!window.location.hash) return;
+  window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+}

@@ -6,7 +6,9 @@ import {
   clearEmailCallbackCodeBackup,
   exchangeEmailCallbackCodeOnce,
   readEmailCallbackCodeFromLocation,
+  stripAuthCallbackHashFromUrl,
   stripAuthCallbackSearchFromUrl,
+  trySetSessionFromUrlHash,
 } from '../lib/authCallbackExchange';
 import { PageLoader } from '../components/ui/LoadingSpinner';
 
@@ -19,8 +21,8 @@ function messageAfterCodeExchangeFailure(err: unknown, serverMessage?: string | 
   const raw = typeof serverMessage === 'string' ? serverMessage.trim() : '';
   if (/invalid|expired/i.test(raw)) {
     return (
-      'That confirmation link was already used or has expired. Sign up again or use “Resend confirmation” on the login page, '
-      + 'then open the new link in the same browser where you signed up.'
+      'That confirmation link was already used or has expired. On the login page, enter your email and tap '
+      + '“Resend confirmation email”, then open the new link in the same browser where you signed up.'
     );
   }
   if (raw.length > 0) return raw;
@@ -29,11 +31,22 @@ function messageAfterCodeExchangeFailure(err: unknown, serverMessage?: string | 
 
 function readOAuthErrorFromLocation(): string | null {
   const params = new URLSearchParams(window.location.search);
-  return (
+  const fromQuery =
     params.get('error_description')?.trim()
     ?? params.get('error')?.trim()
-    ?? null
-  );
+    ?? null;
+  if (fromQuery) return fromQuery;
+
+  const hash = window.location.hash.replace(/^#/, '');
+  if (!hash) return null;
+  const hp = new URLSearchParams(hash);
+  return hp.get('error_description')?.trim() ?? hp.get('error')?.trim() ?? null;
+}
+
+function finishCallbackUi(): void {
+  clearEmailCallbackCodeBackup();
+  stripAuthCallbackSearchFromUrl();
+  stripAuthCallbackHashFromUrl();
 }
 
 /** PKCE / email confirmation: exchange `?code=` for a persisted session before any catch-all redirects strip query params. */
@@ -41,48 +54,49 @@ export function AuthCallbackPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    let cancelled = false;
-
     const oauthErr = readOAuthErrorFromLocation();
     const code = readEmailCallbackCodeFromLocation();
 
     const goLogin = (authCallbackError: string) => {
-      if (cancelled) return;
-      clearEmailCallbackCodeBackup();
-      stripAuthCallbackSearchFromUrl();
+      finishCallbackUi();
       navigate('/login', { replace: true, state: { authCallbackError } });
     };
 
     void (async () => {
-      const {
-        data: { session: existingSession },
-      } = await supabase.auth.getSession();
-      if (cancelled) return;
-
-      if (existingSession) {
-        clearEmailCallbackCodeBackup();
-        stripAuthCallbackSearchFromUrl();
-        navigate('/app/feed', { replace: true });
-        return;
-      }
-
       if (oauthErr) {
         console.error('[auth/callback] Supabase error in redirect query:', oauthErr);
         goLogin(oauthErr);
         return;
       }
 
+      const hashOk = await trySetSessionFromUrlHash();
+      if (hashOk) {
+        finishCallbackUi();
+        navigate('/app/feed', { replace: true });
+        return;
+      }
+
+      const {
+        data: { session: existingSession },
+      } = await supabase.auth.getSession();
+
+      if (existingSession?.user?.email_confirmed_at) {
+        finishCallbackUi();
+        navigate('/app/feed', { replace: true });
+        return;
+      }
+
       if (!code) {
         console.warn('[auth/callback] Missing ?code= (PKCE / email verification callback).');
         goLogin(
-          'Missing verification code. Request a new confirmation email from the login page and open that link in the same browser where you signed up.',
+          'Missing verification code. Enter your email on the login page and use “Resend confirmation email”, '
+          + 'then open that link in the same browser where you signed up.',
         );
         return;
       }
 
       try {
         const result = await exchangeEmailCallbackCodeOnce(code);
-        if (cancelled) return;
 
         if (!result.ok) {
           const err = result.error;
@@ -97,11 +111,9 @@ export function AuthCallbackPage() {
 
         console.log('[auth/callback] exchangeCodeForSession ok, session:', Boolean(result.session));
 
-        clearEmailCallbackCodeBackup();
-        stripAuthCallbackSearchFromUrl();
+        finishCallbackUi();
         navigate('/app/feed', { replace: true });
       } catch (err) {
-        if (cancelled) return;
         console.error('[auth/callback] Unexpected error exchanging code:', err);
         goLogin(
           messageAfterCodeExchangeFailure(
@@ -111,10 +123,6 @@ export function AuthCallbackPage() {
         );
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [navigate]);
 
   return (
