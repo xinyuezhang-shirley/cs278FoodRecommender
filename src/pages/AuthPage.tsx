@@ -16,6 +16,13 @@ interface AuthPageProps {
 
 const OAUTH_ERROR_QUERY_KEYS = ['error', 'error_description', 'error_code'] as const;
 
+function isVerificationRelatedMessage(message: string | null): boolean {
+  if (!message?.trim()) return false;
+  return /verified|verification|confirmation|confirm your email|expired|invalid.*link|pkce|token_hash/i.test(
+    message,
+  );
+}
+
 export function AuthPage({ mode }: AuthPageProps) {
   const { signIn, signUp, user, loading: authBootstrapping } = useAuth();
   const navigate = useNavigate();
@@ -27,12 +34,22 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [resendBusy, setResendBusy] = useState(false);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string | null>(null);
 
-  const showResendConfirmation = mode === 'login' && !user;
+  const storedPendingEmail = mode === 'login' ? readPendingVerifyEmail() : null;
+  const showResendOnLogin =
+    mode === 'login'
+    && !user
+    && (
+      isVerificationRelatedMessage(error)
+      || (!!storedPendingEmail
+        && email.trim().toLowerCase() === storedPendingEmail.trim().toLowerCase())
+    );
 
   useEffect(() => {
     setPendingVerifyEmail(null);
+    setResendNotice(null);
     setError(null);
   }, [mode]);
 
@@ -122,13 +139,20 @@ export function AuthPage({ mode }: AuthPageProps) {
   }
 
   async function handleResendConfirmation() {
-    if (!email.trim() || resendBusy) return;
+    const targetEmail = (pendingVerifyEmail ?? email).trim();
+    if (!targetEmail || resendBusy) return;
     setResendBusy(true);
+    setResendNotice(null);
     try {
-      await resendSignupConfirmation(email);
-      setError(
-        'New confirmation email sent. Open that link in this same browser (not your phone’s mail app in another profile), then sign in.',
-      );
+      await resendSignupConfirmation(targetEmail);
+      const notice =
+        'New confirmation email sent. Open the link from that message on any device, then sign in.';
+      if (mode === 'signup' && pendingVerifyEmail) {
+        setResendNotice(notice);
+        setError(null);
+      } else {
+        setError(notice);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not resend confirmation email');
     } finally {
@@ -172,17 +196,27 @@ export function AuthPage({ mode }: AuthPageProps) {
             role="status"
           >
             <p className="font-black text-[#115e59] mb-2">Almost there — confirm your email</p>
+            {resendNotice ? (
+              <p className="font-semibold text-[#0f766e] mb-3">{resendNotice}</p>
+            ) : null}
             <p className="font-medium mb-3">
               We sent a verification link to{' '}
               <span className="font-semibold text-[#0f766e] break-all">{pendingVerifyEmail}</span>.
-              Check your inbox and your spam / junk folder if you don&apos;t see it yet. Open that
-              email in <strong>this same browser</strong> (PKCE security) — Nommi finishes sign-in
-              automatically, then sends you to the feed. If that doesn&apos;t happen,{' '}
+              Check your inbox and your spam / junk folder if you don&apos;t see it yet. Open the
+              link on any device — Nommi confirms your email and sends you to the feed. After that,{' '}
               <Link to="/login" className="font-bold text-[#2f5fc4] underline underline-offset-2">
                 sign in here
               </Link>{' '}
               with the password you chose.
             </p>
+            <button
+              type="button"
+              disabled={resendBusy}
+              onClick={() => void handleResendConfirmation()}
+              className="mb-2 w-full rounded-xl border border-[#99f6e4] bg-white px-3 py-2 text-[13px] font-bold text-[#0f766e] transition-colors hover:bg-[#f0fdfa] disabled:opacity-50"
+            >
+              {resendBusy ? 'Sending…' : 'Resend confirmation email'}
+            </button>
             <button
               type="button"
               className="text-xs font-bold text-[#64748b] hover:text-[#1e293b] underline underline-offset-2"
@@ -261,7 +295,7 @@ export function AuthPage({ mode }: AuthPageProps) {
           </Button>
         </form>
 
-        {showResendConfirmation ? (
+        {showResendOnLogin ? (
           <div className="mt-4 space-y-2">
             <button
               type="button"
@@ -275,11 +309,7 @@ export function AuthPage({ mode }: AuthPageProps) {
               <p className="text-center text-[11px] font-medium text-[#9ca3af]">
                 Enter your email above to resend
               </p>
-            ) : (
-              <p className="text-center text-[11px] leading-snug text-[#9ca3af]">
-                Open the new link in this same browser (not only your phone mail app).
-              </p>
-            )}
+            ) : null}
           </div>
         ) : null}
 

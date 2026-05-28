@@ -300,8 +300,7 @@ function prettifySignInWithPasswordError(error: { message: string; code?: string
     || lcMsg.includes('email address not confirmed')
   ) {
     return (
-      'This email hasn\'t been verified yet. Use the confirmation link Supabase emailed you (check spam), '
-      + 'then sign in.'
+      'This email hasn\'t been verified yet. Check your inbox (and spam), or use Resend confirmation email below.'
     );
   }
 

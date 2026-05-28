@@ -24,8 +24,8 @@ function messageAfterCodeExchangeFailure(err: unknown, serverMessage?: string | 
   const raw = typeof serverMessage === 'string' ? serverMessage.trim() : '';
   if (/invalid|expired/i.test(raw)) {
     return (
-      'That confirmation link was already used or has expired. On the login page, enter your email and tap '
-      + '“Resend confirmation email”, then open the new link in the same browser where you signed up.'
+      'That confirmation link was already used or has expired. Sign in with your email and use '
+      + '“Resend confirmation email”, or go to Sign up to request a new link.'
     );
   }
   if (raw.length > 0) return raw;
@@ -89,7 +89,7 @@ export function AuthCallbackPage() {
             ? String((otpResult.error as { message: unknown }).message)
             : undefined;
         console.error('[auth/callback] verifyOtp failed:', otpMsg, otpResult.error);
-        goLogin(otpMsg ?? 'Email confirmation failed. Request a new confirmation email from login.');
+        goLogin(otpMsg ?? 'Email confirmation failed. Sign in and use Resend confirmation email if shown.');
         return;
       }
 
@@ -113,8 +113,7 @@ export function AuthCallbackPage() {
       if (!code) {
         console.warn('[auth/callback] Missing ?code= (PKCE / email verification callback).');
         goLogin(
-          'Missing verification code. Enter your email on the login page and use “Resend confirmation email”, '
-          + 'then open that link in the same browser where you signed up.',
+          'Missing verification code. Sign in and use “Resend confirmation email”, or sign up again to get a new link.',
         );
         return;
       }
