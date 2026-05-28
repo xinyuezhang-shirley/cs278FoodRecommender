@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
 import nommiLogoTagline from '../assets/nommi/nommi_logo_tagline.png';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { resendSignupConfirmation } from '../services/authService';
 
 interface AuthPageProps {
   mode: 'login' | 'signup';
@@ -21,7 +22,16 @@ export function AuthPage({ mode }: AuthPageProps) {
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resendBusy, setResendBusy] = useState(false);
   const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string | null>(null);
+
+  const showResendConfirmation =
+    mode === 'login'
+    && !user
+    && Boolean(
+      error
+      && /confirm|verif|expired|invalid|same browser|hasn't been verified|confirmation/i.test(error),
+    );
 
   useEffect(() => {
     setPendingVerifyEmail(null);
@@ -106,6 +116,21 @@ export function AuthPage({ mode }: AuthPageProps) {
     setPassword('NommiDemo1!');
   }
 
+  async function handleResendConfirmation() {
+    if (!email.trim() || resendBusy) return;
+    setResendBusy(true);
+    try {
+      await resendSignupConfirmation(email);
+      setError(
+        'New confirmation email sent. Open that link in this same browser (not your phone’s mail app in another profile), then sign in.',
+      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not resend confirmation email');
+    } finally {
+      setResendBusy(false);
+    }
+  }
+
   return (
     <div className="min-h-dvh bg-[#faf9f5] flex flex-col items-center justify-center px-5 py-10">
       {/* Brand */}
@@ -146,8 +171,8 @@ export function AuthPage({ mode }: AuthPageProps) {
               We sent a verification link to{' '}
               <span className="font-semibold text-[#0f766e] break-all">{pendingVerifyEmail}</span>.
               Check your inbox and your spam / junk folder if you don&apos;t see it yet. Open that
-              email and tap the link — Nommi finishes sign-in automatically, then sends you to the
-              feed. If that doesn&apos;t happen,{' '}
+              email in <strong>this same browser</strong> (PKCE security) — Nommi finishes sign-in
+              automatically, then sends you to the feed. If that doesn&apos;t happen,{' '}
               <Link to="/login" className="font-bold text-[#2f5fc4] underline underline-offset-2">
                 sign in here
               </Link>{' '}
@@ -174,6 +199,17 @@ export function AuthPage({ mode }: AuthPageProps) {
             {error}
           </div>
         )}
+
+        {showResendConfirmation ? (
+          <button
+            type="button"
+            disabled={resendBusy || !email.trim()}
+            onClick={() => void handleResendConfirmation()}
+            className="mb-4 w-full rounded-2xl border border-[#bfdbfe] bg-[#eff6ff] px-3 py-2.5 text-center text-[13px] font-bold text-[#2f5fc4] transition-colors hover:bg-[#dbeafe] disabled:opacity-50"
+          >
+            {resendBusy ? 'Sending…' : 'Resend confirmation email'}
+          </button>
+        ) : null}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === 'signup' && (

@@ -495,27 +495,34 @@ export async function getEmailVerificationStatus(): Promise<EmailVerificationSta
   return { verified, email };
 }
 
+export async function resendSignupConfirmation(email: string): Promise<void> {
+  const trimmed = email.trim();
+  if (!validateEmail(trimmed)) throw new Error('Enter a valid email to resend confirmation.');
+
+  const emailRedirectTo = resolveAuthEmailCallbackUrl();
+  if (!emailRedirectTo) {
+    throw new Error(
+      'Cannot build verification redirect. Open Nommi in a browser tab or set VITE_SITE_URL.',
+    );
+  }
+
+  const result = await supabase.auth.resend({
+    type: 'signup',
+    email: trimmed,
+    options: { emailRedirectTo },
+  });
+  if (result.error) {
+    throw new Error(prettifySupabaseEmailAuthError(result.error.message));
+  }
+}
+
 export async function resendVerificationEmail(): Promise<void> {
   const { data, error } = await supabase.auth.getUser();
   if (error) throw new Error(prettifySupabaseEmailAuthError(error.message));
   const email = data.user?.email;
   if (!email) throw new Error('No email available');
 
-  const emailRedirectTo = resolveAuthEmailCallbackUrl();
-  if (!emailRedirectTo) {
-    throw new Error(
-      'Cannot build verification redirect. Set VITE_SITE_URL if you cannot use this in a browser.',
-    );
-  }
-
-  const result = await supabase.auth.resend({
-    type: 'signup',
-    email,
-    options: { emailRedirectTo },
-  });
-  if (result.error) {
-    throw new Error(prettifySupabaseEmailAuthError(result.error.message));
-  }
+  await resendSignupConfirmation(email);
 }
 
 export async function updateAuthEmail(newEmail: string): Promise<void> {
